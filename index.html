@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UMBRÍA · Santuario forestal</title>
+<meta name="description" content="UMBRÍA: la cara de sombra del bosque, donde crece todo lo que no soporta el sol directo. Pieza inmersiva de una sola toma. Demostración de diseño.">
+<meta name="theme-color" content="#070b09">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23070b09'/%3E%3Cpath d='M16 6c6 4 8 9 5 13s-9 4-11 0 0-9 6-13z' fill='%23d7b06a'/%3E%3Cpath d='M16 7v19' stroke='%23070b09' stroke-width='1.4'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="estilo.css">
+<link rel="preload" href="tipos/fraunces-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="tipos/inter-tight-wght.woff2" as="font" type="font/woff2" crossorigin>
+</head>
+<body>
+
+<a class="saltar" href="#contenido">Saltar al contenido</a>
+
+<!-- Pantalla de carga. Se retira sola: si algo fallara, un temporizador la quita igual -->
+<div class="carga" id="carga" role="status" aria-live="polite">
+  <div class="carga__centro">
+    <p class="carga__marca" aria-hidden="true">
+      <span>U</span><span>M</span><span>B</span><span>R</span><span>Í</span><span>A</span>
+    </p>
+    <div class="carga__barra" aria-hidden="true"><i id="carga-progreso"></i></div>
+    <p class="carga__nota">Abriendo la espesura<span class="carga__pct" id="carga-pct">0%</span></p>
+  </div>
+</div>
+
+<!-- Lienzo 3D persistente: vive detrás de todo el documento y no captura eventos -->
+<div class="lienzo" id="lienzo" aria-hidden="true"></div>
+<div class="grano" aria-hidden="true"></div>
+<div class="vineta" aria-hidden="true"></div>
+
+<!-- Alternativa cuando no hay WebGL: el degradado del bosque, dibujado en CSS -->
+<div class="sin-webgl" id="sin-webgl" hidden aria-hidden="true"></div>
+
+<div class="avance" id="avance" aria-hidden="true"></div>
+
+<!-- Cursor con halo. Sólo se monta en escritorio con puntero fino -->
+<div class="cursor" id="cursor" aria-hidden="true">
+  <i class="cursor__halo"></i>
+  <i class="cursor__punto"></i>
+</div>
+
+<header class="nav" id="nav">
+  <a class="nav__marca" href="#umbral">
+    <span class="nav__hoja" aria-hidden="true"></span>
+    <span>UMBRÍA</span>
+  </a>
+  <nav aria-label="Secciones">
+    <ul class="nav__lista">
+      <li><a href="#intro" data-seccion="intro">Umbría</a></li>
+      <li><a href="#sendas" data-seccion="sendas">Sendas</a></li>
+      <li><a href="#linterna" data-seccion="linterna">De noche</a></li>
+      <li><a href="#galeria" data-seccion="galeria">Galería</a></li>
+    </ul>
+  </nav>
+  <a class="boton boton--fino nav__cta" href="#final">Entrar</a>
+</header>
+
+<div class="controles">
+  <button type="button" class="control" id="control-movimiento" aria-pressed="false">
+    <span class="control__icono" aria-hidden="true"><i></i><i></i></span>
+    <span class="control__texto">Pausar movimiento</span>
+  </button>
+</div>
+
+<main class="contenido" id="contenido">
+
+  <!-- 1 · Umbral ----------------------------------------------------- -->
+  <section class="escena umbral" id="umbral" data-tiempo="umbral">
+    <div class="umbral__caja">
+      <p class="etiqueta" data-revela><span>Santuario forestal · pieza de demostración</span></p>
+      <h1 class="titulo-marca" data-revela>
+        <span class="linea"><span class="linea__int">UMBRÍA</span></span>
+      </h1>
+      <p class="umbral__sub" data-revela data-retardo="1">
+        <span class="linea"><span class="linea__int">Cruza la niebla.</span></span>
+        <span class="linea"><span class="linea__int">El bosque lleva rato esperándote.</span></span>
+      </p>
+      <p class="entradilla" data-aparece data-retardo="2">
+        La umbría es la cara de sombra de la montaña: la que no ve el sol de
+        frente y donde, por eso mismo, crece todo lo demás. Musgo, helecho,
+        acebo, silencio.
+      </p>
+      <div class="acciones" data-aparece data-retardo="3">
+        <a class="boton boton--solido" href="#intro"><span class="punto" aria-hidden="true"></span>Entrar en el bosque</a>
+        <a class="boton" href="#sendas">Ver las sendas</a>
+      </div>
+    </div>
+    <div class="umbral__pie" data-aparece data-retardo="4">
+      <span class="desliza"><i aria-hidden="true"></i>Desplázate</span>
+      <p class="nota">41°N · 800 m<br>Orientación norte</p>
+    </div>
+  </section>
+
+  <!-- 2 · Marquesina -------------------------------------------------- -->
+  <div class="marquesina" aria-hidden="true">
+    <div class="marquesina__pista" id="marquesina-pista"></div>
+  </div>
+
+  <!-- 3 · Introducción editorial -------------------------------------- -->
+  <section class="escena intro" id="intro" data-tiempo="intro">
+    <div class="interior">
+      <p class="etiqueta" data-revela><span>01 · Dónde estás</span></p>
+      <div class="intro__rejilla">
+        <h2 class="titular" data-revela>
+          <span class="linea"><span class="linea__int">La luz tarda</span></span>
+          <span class="linea"><span class="linea__int">en llegar abajo.</span></span>
+        </h2>
+        <div class="intro__texto">
+          <p class="editorial" data-aparece>
+            <span class="capitular">E</span>n la umbría el día empieza tarde y termina pronto.
+            Lo que arriba es un mediodía blanco, aquí abajo llega filtrado por
+            cuatro pisos de hoja: primero el haya, luego el acebo, después el
+            helecho y por último el musgo, que se conforma con muy poco.
+          </p>
+          <p class="editorial" data-aparece data-retardo="1">
+            Nada de esto tiene prisa. Un haya tarda ochenta años en dar sombra
+            de verdad. El musgo que pisas ahora llevaba aquí desde antes de que
+            existiera el sendero.
+          </p>
+          <ul class="datos" data-aparece data-retardo="2">
+            <li><span class="datos__num">4</span><span class="datos__pie">pisos de vegetación</span></li>
+            <li><span class="datos__num">12%</span><span class="datos__pie">de luz llega al suelo</span></li>
+            <li><span class="datos__num">9°C</span><span class="datos__pie">menos que a pleno sol</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · Sendas ------------------------------------------------------ -->
+  <section class="escena sendas" id="sendas" data-tiempo="sendas">
+    <div class="interior">
+      <p class="etiqueta" data-revela><span>02 · Sendas</span></p>
+      <h2 class="titular titular--medio" data-revela>
+        <span class="linea"><span class="linea__int">Tres maneras</span></span>
+        <span class="linea"><span class="linea__int">de atravesarlo.</span></span>
+      </h2>
+      <div class="tarjetas" id="tarjetas"></div>
+    </div>
+  </section>
+
+  <!-- 5 · Linterna ---------------------------------------------------- -->
+  <section class="escena linterna" id="linterna" data-tiempo="linterna">
+    <div class="interior">
+      <p class="etiqueta" data-revela><span>03 · De noche</span></p>
+      <h2 class="titular titular--medio" data-revela>
+        <span class="linea"><span class="linea__int">Lo que no</span></span>
+        <span class="linea"><span class="linea__int">se ve de día.</span></span>
+      </h2>
+      <p class="entradilla entradilla--centro" data-aparece>
+        Mueve el cursor sobre la escena. En pantalla táctil, arrastra el dedo.
+      </p>
+      <div class="visor" id="visor" role="img"
+           aria-label="Escena nocturna del bosque que se descubre con una linterna al mover el cursor.">
+        <canvas class="visor__lienzo visor__lienzo--noche" id="visor-noche"></canvas>
+        <canvas class="visor__lienzo visor__lienzo--luz" id="visor-luz"></canvas>
+        <p class="visor__pista" id="visor-pista">Busca las luciérnagas</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · Galería ----------------------------------------------------- -->
+  <section class="escena galeria" id="galeria" data-tiempo="galeria">
+    <div class="interior">
+      <p class="etiqueta" data-revela><span>04 · Galería</span></p>
+      <h2 class="titular titular--medio" data-revela>
+        <span class="linea"><span class="linea__int">Ocho horas</span></span>
+        <span class="linea"><span class="linea__int">de la misma luz.</span></span>
+      </h2>
+      <div class="galeria__rejilla" id="galeria-rejilla"></div>
+    </div>
+  </section>
+
+  <!-- 7 · Manifiesto -------------------------------------------------- -->
+  <section class="escena manifiesto" id="manifiesto" data-tiempo="manifiesto">
+    <div class="interior interior--estrecho">
+      <p class="etiqueta" data-revela><span>05 · Manifiesto</span></p>
+      <blockquote class="manifiesto__texto">
+        <span class="linea" data-revela><span class="linea__int">No traemos nada.</span></span>
+        <span class="linea" data-revela><span class="linea__int">No dejamos nada.</span></span>
+        <span class="linea" data-revela><span class="linea__int">Andamos despacio</span></span>
+        <span class="linea" data-revela><span class="linea__int">y hablamos bajo.</span></span>
+      </blockquote>
+      <p class="entradilla" data-aparece>
+        Un bosque en sombra aguanta muy poco trasiego. Los grupos son pequeños,
+        las sendas son las de siempre y lo que se saca de aquí son las botas
+        sucias y poco más.
+      </p>
+    </div>
+  </section>
+
+  <!-- 8 · Cierre ------------------------------------------------------ -->
+  <section class="escena final" id="final" data-tiempo="final">
+    <div class="interior interior--estrecho final__caja">
+      <p class="etiqueta" data-revela><span>06 · El claro</span></p>
+      <h2 class="titular" data-revela>
+        <span class="linea"><span class="linea__int">El bosque no</span></span>
+        <span class="linea"><span class="linea__int">se visita.</span></span>
+        <span class="linea"><span class="linea__int">Se atraviesa.</span></span>
+      </h2>
+      <p class="entradilla entradilla--centro" data-aparece>
+        Has llegado al claro. Desde aquí se vuelve por donde has venido, o se
+        empieza otra vez y se mira lo que se te pasó.
+      </p>
+      <div class="acciones acciones--centro" data-aparece data-retardo="1">
+        <button type="button" class="boton boton--solido" id="volver">
+          <span class="punto" aria-hidden="true"></span>Volver a entrar
+        </button>
+        <a class="boton" href="#sendas">Repasar las sendas</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="pie">
+  <div class="interior pie__interior">
+    <div>
+      <p class="pie__marca">UMBRÍA</p>
+      <p class="nota pie__aviso">
+        UMBRÍA no existe: es una marca ficticia creada para esta demostración de
+        diseño de <strong>CodeCraft</strong>. El bosque, la niebla, las
+        luciérnagas y las seis piezas de la galería están generados por código
+        en tu propio navegador — no hay ni una fotografía descargada. Tampoco
+        hay tienda, formularios, seguimiento ni integraciones.
+      </p>
+    </div>
+    <div class="pie__col">
+      <p class="nota">Tipografías: Fraunces e Inter Tight (SIL&nbsp;OFL).<br>
+      three.js (MIT) · GSAP (licencia estándar de GreenSock).</p>
+      <p class="nota">© <span id="anio">2026</span> · Pieza de demostración</p>
+    </div>
+  </div>
+</footer>
+
+<!-- Librerías empaquetadas con el proyecto: la página funciona sin conexión -->
+<script src="vendor/three.min.js"></script>
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/ScrollTrigger.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
