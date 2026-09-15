@@ -12,6 +12,8 @@
  * un temporizador la retira igual y la página se queda usable.
  */
 
+import './estilos/estilo.css';
+
 import { medirEquipo, reducido as pideReducido } from './lib/util.js';
 import { montarBosque } from './bosque/escena.js';
 import { montarCursor } from './ui/cursor.js';

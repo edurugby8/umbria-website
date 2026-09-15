@@ -5,6 +5,7 @@
  * licencia sobre las imágenes.
  */
 
+import * as THREE from 'three';
 import { azarCon } from '../lib/util.js';
 
 function lienzo(w, h, pintar) {

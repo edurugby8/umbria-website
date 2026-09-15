@@ -7,17 +7,46 @@ Página inmersiva de una sola toma: un bosque en sombra que se atraviesa.
 > hay tienda, formularios, seguimiento ni integraciones, y no se inventan
 > testimonios, premios ni resultados de negocio.
 
-Se abre en local sin instalar nada y **sin conexión**: las librerías, las
-tipografías y todas las imágenes van dentro del proyecto o se generan en el
-navegador.
+**En marcha en dos órdenes:**
 
 ```bash
-python3 -m http.server 4300      # desde esta carpeta
-# y abrir http://localhost:4300/
+npm install
+npm run dev
 ```
 
-Hace falta servirla (aunque sea así) porque el JavaScript son módulos ES, y el
-navegador no los carga desde `file://`.
+Y abrir la dirección que imprime la consola: **http://localhost:4300/umbria-website/**
+(la ruta del final no es un capricho, ver *Ruta base* más abajo).
+
+| Orden | Qué hace |
+| --- | --- |
+| `npm install` | Instala las dependencias (three.js, GSAP y Vite). |
+| `npm run dev` | Servidor de desarrollo con recarga en caliente. |
+| `npm run build` | Compila a `dist/`, listo para publicar. |
+| `npm run preview` | Sirve `dist/` para revisar la compilación antes de subirla. |
+| `npm run pruebas` | Recorrido funcional con Playwright (ver *Pruebas*). |
+
+Hace falta Node 20 o superior.
+
+### Ruta base
+
+La página se publica en GitHub Pages **dentro de la ruta del repositorio**, no en
+la raíz del dominio, así que `vite.config.js` fija `base: '/umbria-website/'`.
+Vite la antepone a todo: al script, a la hoja de estilos, a las tipografías y a
+lo que salga de `public/`. El servidor de desarrollo sirve bajo esa misma ruta,
+de modo que lo que ves en local es exactamente lo que se publica.
+
+Si algún día la página pasa a un dominio propio, se cambia esa línea a `'/'` y
+no hay que tocar nada más.
+
+### Publicar
+
+Ya está montado: `.github/workflows/pages.yml` compila y publica en cada
+empujón a `main`. **Sólo hay que hacer una cosa a mano, y una sola vez:**
+
+> *Settings* → *Pages* → *Source*: **GitHub Actions**
+
+A partir de ahí queda en `https://edurugby8.github.io/umbria-website/`. También
+se puede lanzar a mano desde la pestaña *Actions*.
 
 ---
 
@@ -86,20 +115,28 @@ la página.
 Sin framework y sin compilación. HTML, CSS y módulos ES.
 
 ```
-index.html          estructura
-estilo.css          todo el diseño
-js/
-  main.js           arranque y orquestación
-  datos.js          textos, sendas y galería: el contenido, en un sitio
-  lib/util.js       interpolación, curvas, medida del equipo
-  bosque/escena.js  el bosque 3D y el recorrido de cámara
-  bosque/texturas.js  árboles, helechos, niebla, rayos: dibujados en lienzo
-  bosque/particulas.js  polen y luciérnagas, con su shader
-  arte/paisaje.js   los paisajes de la galería, tarjetas y linterna
-  ui/…              cursor, revelados, marquesina, linterna, contenido
-vendor/             three.js y GSAP, alojados aquí
-tipos/              las dos tipografías variables
+index.html              punto de entrada (Vite parte de aquí)
+vite.config.js          ruta base, servidores y reparto de trozos
+public/                 lo que se copia tal cual: favicon y .nojekyll
+src/
+  main.js               arranque y orquestación
+  datos.js              textos, sendas y galería: el contenido, en un sitio
+  estilos/estilo.css    todo el diseño
+  tipos/                las dos tipografías variables
+  lib/util.js           interpolación, curvas, medida del equipo
+  bosque/escena.js      el bosque 3D y el recorrido de cámara
+  bosque/texturas.js    árboles, helechos, niebla, rayos: dibujados en lienzo
+  bosque/particulas.js  polen, luciérnagas y hojas, con su sombreador
+  arte/paisaje.js       los paisajes de la galería, tarjetas y linterna
+  ui/                   cursor, revelados, marquesina, linterna, contenido
+pruebas.mjs             recorrido funcional
+.github/workflows/      publicación en GitHub Pages
 ```
+
+Las tipografías viven en `src/`, no en `public/`, a propósito: así Vite las
+versiona con un resumen en el nombre y les pone la ruta base sola. En `public/`
+va sólo lo que tiene que conservar su nombre exacto.
+
 
 ### Las ideas que conviene no romper
 
@@ -177,13 +214,31 @@ sola fotografía decente.
 - Si no hay WebGL se pinta el bosque en CSS y el resto de la página funciona
   igual.
 
+## Pruebas
+
+Con la compilación servida en otra terminal:
+
+```bash
+npm run build && npm run preview     # en una terminal
+npm run pruebas                      # en otra
+```
+
+Necesita Playwright (`npx playwright install chromium`; si el navegador ya está
+en otra ruta, se pasa en `CHROMIUM`). Son veinte comprobaciones repartidas en
+cuatro escenarios: escritorio, movimiento reducido, móvil y sin WebGL. Cubren
+que la pantalla de carga se retire, que el contenido se construya, que los
+revelados dejen el texto a la vista, que los lienzos se pinten de verdad, que la
+linterna siga al puntero, que **la rueda no esté secuestrada**, el control de
+movimiento, «Volver a entrar», que no haya desbordamiento horizontal y el
+respaldo sin WebGL.
+
 ## Licencias
 
-- **three.js** 0.160.1 — MIT (`vendor/three-LICENSE.txt`).
+- **three.js** 0.160.1 — MIT.
 - **GSAP** 3.12.5 y **ScrollTrigger** — licencia estándar de GreenSock, gratuita
-  para este uso; la cabecera va dentro de los archivos.
+  para este uso.
 - **Fraunces** e **Inter Tight** — SIL Open Font License 1.1
-  (`tipos/*-LICENSE.txt`).
+  (`src/tipos/*-LICENSE.txt`).
 - Todo lo demás —código, textos y las imágenes generadas— es original de esta
   pieza.
 

@@ -7,21 +7,23 @@
  * bajar y subir recorran la misma curva.
  */
 
-const { gsap } = window;
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+gsap.registerPlugin(ScrollTrigger);
 
 export function montarRevelados({ reducido, alCambiarSeccion }) {
   const raiz = document.documentElement;
 
   // Con movimiento reducido no hay recorrido: se retira el estado de partida
   // (que es lo que mantiene el texto escondido) y se deja todo a la vista.
-  if (reducido || !gsap || !window.ScrollTrigger) {
+  if (reducido) {
     raiz.removeAttribute('data-anima');
     barraDeAvance(raiz);
     seccionActiva(alCambiarSeccion);
     return { refrescar() {}, entradaHero() {} };
   }
 
-  gsap.registerPlugin(window.ScrollTrigger);
   gsap.defaults({ ease: 'power3.out' });
   /*
    * GSAP, por defecto, CONGELA su reloj cuando un fotograma tarda más de medio
@@ -96,7 +98,7 @@ export function montarRevelados({ reducido, alCambiarSeccion }) {
   requestAnimationFrame(() => {
     cascada('.tarjeta', '#tarjetas');
     cascada('.pieza', '#galeria-rejilla');
-    window.ScrollTrigger.refresh();
+    ScrollTrigger.refresh();
   });
 
   /* Paralaje suave de los titulares: suben un poco menos que la página, que
@@ -138,7 +140,7 @@ export function montarRevelados({ reducido, alCambiarSeccion }) {
       );
   }
 
-  return { refrescar: () => window.ScrollTrigger.refresh(), entradaHero };
+  return { refrescar: () => ScrollTrigger.refresh(), entradaHero };
 }
 
 /** Las cifras de la introducción cuentan hacia arriba al entrar en pantalla. */

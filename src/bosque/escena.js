@@ -11,6 +11,7 @@
  * donde debe.
  */
 
+import * as THREE from 'three';
 import { clamp, damp, lerp, salidaCubica, suave } from '../lib/util.js';
 import { texturaArbol, texturaHelecho, texturaNiebla, texturaMota, texturaRayo, texturaCielo, texturaHoja } from './texturas.js';
 import { crearMotas } from './particulas.js';

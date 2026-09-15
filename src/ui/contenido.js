@@ -6,6 +6,8 @@
  * arrancar se notarían.
  */
 
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
 import { SENDAS, GALERIA } from '../datos.js';
 import { pintarEn } from '../arte/paisaje.js';
 
@@ -17,7 +19,7 @@ import { pintarEn } from '../arte/paisaje.js';
 let remedir;
 function avisarDeCambio() {
   clearTimeout(remedir);
-  remedir = setTimeout(() => window.ScrollTrigger?.refresh(), 220);
+  remedir = setTimeout(() => ScrollTrigger.refresh(), 220);
 }
 
 function alAcercarse(elemento, pintar) {

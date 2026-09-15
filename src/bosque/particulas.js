@@ -9,6 +9,7 @@
  * no laten todas a la vez.
  */
 
+import * as THREE from 'three';
 const VERTEX = /* glsl */ `
   attribute float aFase;
   attribute float aEscala;

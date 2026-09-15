@@ -8,7 +8,7 @@
  */
 import { chromium } from 'playwright';
 
-const URL = process.env.URL || 'http://localhost:4300/';
+const URL = process.env.URL || 'http://localhost:4300/umbria-website/';
 const fallos = [];
 const ok = (n) => console.log('  ✓', n);
 const fallo = (n, d) => { fallos.push(n); console.log('  ✗', n, '→', d); };
