@@ -40,16 +40,22 @@ no hay que tocar nada más.
 
 ### Publicar
 
-Ya está montado: `.github/workflows/pages.yml` compila y publica en cada
-empujón a `main`, y habilita Pages él solo la primera vez. No hay que tocar
-nada a mano.
+`.github/workflows/pages.yml` compila y publica en cada empujón a `main`.
 
-Queda en **https://edurugby8.github.io/umbria-website/**. También se puede
-lanzar a mano desde la pestaña *Actions*.
+**Hace falta una cosa a mano, una sola vez:**
 
-Si alguna vez falla el paso *configure-pages* con un «Get Pages site failed», es
-que el repositorio no tiene Pages habilitado y el permiso del flujo no ha
-bastado: se arregla en *Settings* → *Pages* → *Source*: **GitHub Actions**.
+> *Settings* → *Pages* → *Source*: **GitHub Actions**
+
+Hasta que se haga, el flujo falla en el paso *configure-pages* con un «Get Pages
+site failed»: es literalmente que el repositorio todavía no tiene sitio de
+Pages. No se puede automatizar —se intentó con `enablement: true` y la API
+responde «Resource not accessible by integration», porque crear el sitio pide
+permiso de administración que el token del flujo no tiene—.
+
+Después de ese clic no hace falta volver a empujar: basta con *Actions* → la
+ejecución fallida → **Re-run all jobs**.
+
+Queda en **https://edurugby8.github.io/umbria-website/**.
 
 ---
 
