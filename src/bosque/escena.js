@@ -12,8 +12,18 @@
  */
 
 import * as THREE from 'three';
-import { clamp, damp, lerp, salidaCubica, suave } from '../lib/util.js';
-import { texturaArbol, texturaHelecho, texturaNiebla, texturaMota, texturaRayo, texturaCielo, texturaHoja } from './texturas.js';
+import { clamp, damp, lerp, ruido, salidaCubica, suave } from '../lib/util.js';
+import {
+  texturaHelecho,
+  texturaNiebla,
+  texturaMota,
+  texturaRayo,
+  texturaCielo,
+  texturaHoja,
+  texturaCorteza,
+  texturaFollaje,
+  texturaSuelo,
+} from './texturas.js';
 import { crearMotas } from './particulas.js';
 
 /* ── Paradas del recorrido ──────────────────────────────────────────── */
@@ -68,12 +78,11 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
 
   const camara = new THREE.PerspectiveCamera(52, 1, 0.1, 400);
 
-  // ── Luz ────────────────────────────────────────────────────────────
-  // Materiales básicos: la profundidad la da la niebla, no el sombreado.
-  // Sale más barato y, en un bosque a contraluz, más creíble.
   const mapas = {
-    arboles: [texturaArbol(1), texturaArbol(7), texturaArbol(13)],
+    corteza: texturaCorteza(),
+    follaje: [texturaFollaje(2), texturaFollaje(19)],
     helechos: [texturaHelecho(3), texturaHelecho(11)],
+    suelo: texturaSuelo(),
     niebla: texturaNiebla(5),
     mota: texturaMota(),
     rayo: texturaRayo(),
@@ -82,12 +91,67 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
   };
   const aDesechar = [];
 
-  /* ── Suelo ───────────────────────────────────────────────────────── */
-  const geoSuelo = new THREE.PlaneGeometry(400, 400);
-  const matSuelo = new THREE.MeshBasicMaterial({ color: 0x0a150f, fog: true });
+  /* ── Luz ──────────────────────────────────────────────────────────
+     Antes todo iba con materiales básicos: sin sombreado, los troncos eran
+     siluetas planas y la niebla cargaba sola con la profundidad. Ahora hay
+     una luz que viene de arriba y de un lado —la que se cuela entre las
+     copas— y otra de relleno desde el cielo. Es lo que le da vuelta al
+     tronco y hace que un cilindro se lea como un cilindro.
+
+     Sombreado Lambert, no físico: con decenas de troncos instanciados y con
+     esta niebla encima, el modelo físico no aportaría nada que se vea y sí
+     costaría. */
+  /* La luz aquí no está para ILUMINAR, está para dar FORMA.
+     Subirla hasta ver bien el bosque destruye lo que hace que esto funcione:
+     que las cosas sean siluetas oscuras recortadas contra la niebla clara. Se
+     queda baja a propósito; lo único que aporta es que un tronco tenga un
+     lado y otro, que es lo que le faltaba cuando era un recorte plano. */
+  const luzCielo = new THREE.HemisphereLight(0x8fb4a1, 0x1b2a20, 0.52);
+  escena.add(luzCielo);
+
+  const luzClave = new THREE.DirectionalLight(0xffeec9, 0.85);
+  luzClave.position.set(-9, 14, -5);
+  escena.add(luzClave);
+
+  // Contraluz por detrás: recorta el canto de los troncos contra la niebla y
+  // evita que el bosque se convierta en una sola masa.
+  const luzContra = new THREE.DirectionalLight(0xa8cbb8, 0.5);
+  luzContra.position.set(7, 5, -18);
+  escena.add(luzContra);
+
+  /* ── Suelo ─────────────────────────────────────────────────────────
+     Un plano liso de 400×400 no es suelo de bosque: es una mesa. Éste está
+     subdividido y ondulado con dos frecuencias —lomas anchas y bultos de
+     raíz— y lleva su hojarasca. Con la niebla encima sólo se aprecia lo que
+     hay cerca, que es exactamente donde se notaba que era plano. */
+  // La subdivisión va con el nivel de calidad: la ondulación es suave y no
+  // necesita malla fina para leerse.
+  const divSuelo = caps.nivel === 'alto' ? 120 : caps.nivel === 'medio' ? 80 : 48;
+  const geoSuelo = new THREE.PlaneGeometry(400, 400, divSuelo, divSuelo);
+  {
+    const pos = geoSuelo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i); // aún sin rotar: este eje será la profundidad
+      const lomas = Math.sin(x * 0.055) * Math.cos(y * 0.041) * 1.15;
+      const bultos = Math.sin(x * 0.31 + y * 0.19) * Math.cos(y * 0.27) * 0.22;
+      // La senda por la que va la cámara se mantiene llana: si no, el suelo
+      // sube y baja delante del objetivo y marea.
+      const senda = Math.min(1, Math.abs(x) / 7);
+      pos.setZ(i, (lomas + bultos) * senda * senda);
+    }
+    geoSuelo.computeVertexNormals();
+  }
+  const matSuelo = new THREE.MeshLambertMaterial({
+    map: mapas.suelo,
+    // El mapa ya es oscuro: multiplicarlo otra vez por un color oscuro dejaba
+    // la mitad inferior del cuadro en negro.
+    color: 0xbccfc2,
+    fog: true,
+  });
   const suelo = new THREE.Mesh(geoSuelo, matSuelo);
   suelo.rotation.x = -Math.PI / 2;
-  suelo.position.y = -0.4;
+  suelo.position.y = -0.55;
   escena.add(suelo);
   aDesechar.push(geoSuelo, matSuelo);
 
@@ -167,28 +231,100 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
     return material;
   }
 
-  mapas.arboles.forEach((mapa, i) => {
-    const cuantos = Math.round(caps.arboles / mapas.arboles.length);
-    const geo = geometriaAspa(9, 22);
-    const mat = new THREE.MeshBasicMaterial({
+  /* ── Arbolado ─────────────────────────────────────────────────────
+     Los árboles eran dos planos cruzados con una silueta pintada. Se leían
+     como cartón recortado, y se notaba justo cuando más se mira: al pasar la
+     cámara por su lado, porque un recorte plano no tiene canto ni vuelta.
+
+     Ahora el TRONCO es geometría de verdad —un cilindro con conicidad,
+     inclinación propia y ondulaciones— y sólo la copa sigue siendo aspa, que
+     es donde un recorte se disimula entre hoja y niebla. El tronco es lo que
+     cruza a un palmo del objetivo; la copa casi siempre está fuera de cuadro
+     o comida por la niebla. */
+
+  /** Tronco: cilindro afinado hacia arriba, con su curva y su bulto. */
+  function geometriaTronco(alto, radio, semilla) {
+    const geo = new THREE.CylinderGeometry(radio * 0.42, radio, alto, 9, 7, true);
+    geo.translate(0, alto / 2, 0);
+    const pos = geo.attributes.position;
+    const inclina = (ruido(semilla, 3) - 0.5) * 0.9;
+    const giro = ruido(semilla, 7) * 6.283;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      const t = y / alto;
+      // Inclinación creciente: el pie no se mueve, la punta sí
+      const desvio = inclina * t * t * alto * 0.11;
+      // Bultos: nudos y raíces, más marcados abajo
+      const bulto = 1 + Math.sin(y * 1.7 + giro) * 0.06 * (1 - t) + Math.sin(y * 0.6 + giro * 2) * 0.05;
+      pos.setX(i, x * bulto + Math.cos(giro) * desvio);
+      pos.setZ(i, z * bulto + Math.sin(giro) * desvio);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  const TRONCOS_DISTINTOS = 5;
+  for (let k = 0; k < TRONCOS_DISTINTOS; k++) {
+    const cuantos = Math.ceil(caps.arboles / TRONCOS_DISTINTOS);
+    const geo = geometriaTronco(19 + ruido(k, 1) * 7, 0.42 + ruido(k, 2) * 0.34, k + 1);
+    const mat = new THREE.MeshLambertMaterial({
+      map: mapas.corteza,
+      color: 0xffffff, // el tono lo pone cada instancia
+      fog: true,
+      side: THREE.DoubleSide,
+    });
+    // El tronco casi no se mueve: lo que se balancea de un haya es la copa
+    conViento(mat, 0.1);
+    const malla = new THREE.InstancedMesh(geo, mat, cuantos);
+    const tono = new THREE.Color();
+    for (let n = 0; n < cuantos; n++) {
+      const lado = Math.random() > 0.5 ? 1 : -1;
+      const x = lado * (3.6 + Math.pow(Math.random(), 0.62) * 26);
+      const z = 28 - Math.random() * 172;
+      const s = 0.62 + Math.random() * 0.9;
+      dummy.position.set(x, -0.5, z);
+      dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+      dummy.scale.set(s, s * (0.8 + Math.random() * 0.5), s);
+      dummy.updateMatrix();
+      malla.setMatrixAt(n, dummy.matrix);
+      // Cada tronco su tono, todos oscuros: son siluetas, no protagonistas
+      const v = 0.1 + Math.random() * 0.17;
+      tono.setRGB(v * 0.95, v, v * 0.8);
+      malla.setColorAt(n, tono);
+    }
+    malla.instanceMatrix.needsUpdate = true;
+    if (malla.instanceColor) malla.instanceColor.needsUpdate = true;
+    malla.frustumCulled = false;
+    escena.add(malla);
+    arboledas.push(malla);
+    aDesechar.push(geo, mat);
+  }
+
+  /* ── Copas ────────────────────────────────────────────────────────
+     Aspas de follaje repartidas arriba. Van por encima de donde mira la
+     cámara, así que lo que se ve de ellas es el techo cerrado del hayedo. */
+  mapas.follaje.forEach((mapa) => {
+    const cuantos = Math.round((caps.arboles * 1.8) / mapas.follaje.length);
+    const geo = geometriaAspa(13, 10);
+    const mat = new THREE.MeshLambertMaterial({
       map: mapa,
-      color: 0x0d1f17,
-      transparent: false,
-      alphaTest: 0.42,
+      color: 0x16301f,
+      alphaTest: 0.38,
       side: THREE.DoubleSide,
       fog: true,
     });
-    conViento(mat, 0.55);
+    conViento(mat, 0.85);
     const malla = new THREE.InstancedMesh(geo, mat, cuantos);
     for (let n = 0; n < cuantos; n++) {
-      // Se reparten en un corredor: nunca en el centro, para dejar la senda
       const lado = Math.random() > 0.5 ? 1 : -1;
-      const x = lado * (4 + Math.pow(Math.random(), 0.65) * 26);
-      const z = 28 - Math.random() * 130;
-      const s = 0.55 + Math.random() * 1.1 + Math.abs(x) * 0.015;
-      dummy.position.set(x, -0.4, z);
+      const x = lado * (1 + Math.pow(Math.random(), 0.5) * 28);
+      const z = 30 - Math.random() * 176;
+      const s = 0.8 + Math.random() * 1.5;
+      dummy.position.set(x, 13 + Math.random() * 12, z);
       dummy.rotation.set(0, Math.random() * Math.PI, 0);
-      dummy.scale.set(s, s * (0.85 + Math.random() * 0.4), s);
+      dummy.scale.setScalar(s);
       dummy.updateMatrix();
       malla.setMatrixAt(n, dummy.matrix);
     }
@@ -197,16 +333,15 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
     escena.add(malla);
     arboledas.push(malla);
     aDesechar.push(geo, mat);
-    if (i === 0) malla.renderOrder = 1;
   });
 
   /* ── Sotobosque ──────────────────────────────────────────────────── */
   mapas.helechos.forEach((mapa) => {
     const cuantos = Math.round(caps.helechos / mapas.helechos.length);
     const geo = geometriaAspa(3.2, 2.2);
-    const mat = new THREE.MeshBasicMaterial({
+    const mat = new THREE.MeshLambertMaterial({
       map: mapa,
-      color: 0x11291d,
+      color: 0x1c3a26,
       alphaTest: 0.4,
       side: THREE.DoubleSide,
       fog: true,
@@ -215,9 +350,11 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
     const malla = new THREE.InstancedMesh(geo, mat, cuantos);
     for (let n = 0; n < cuantos; n++) {
       const lado = Math.random() > 0.5 ? 1 : -1;
-      const x = lado * (3.4 + Math.pow(Math.random(), 0.7) * 18);
-      const z = 22 - Math.random() * 124;
-      const s = 0.5 + Math.random() * 0.7;
+      // Apartados de la senda: pegados al objetivo, un helecho de canto se
+      // lee como una mancha negra con patas cruzando el cuadro.
+      const x = lado * (5.2 + Math.pow(Math.random(), 0.7) * 17);
+      const z = 22 - Math.random() * 166;
+      const s = 0.45 + Math.random() * 0.55;
       dummy.position.set(x, -0.45, z);
       dummy.rotation.set(0, Math.random() * Math.PI, 0);
       dummy.scale.setScalar(s);
@@ -248,7 +385,7 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
         side: THREE.DoubleSide,
       });
       const m = new THREE.Mesh(geo, mat);
-      m.position.set((Math.random() - 0.5) * 34, 24, 14 - i * 22 - Math.random() * 10);
+      m.position.set((Math.random() - 0.5) * 34, 24, 16 - i * 26 - Math.random() * 9);
       m.rotation.z = (Math.random() - 0.5) * 0.5;
       m.rotation.y = (Math.random() - 0.5) * 0.6;
       m.renderOrder = 4;
@@ -256,6 +393,31 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
       rayos.push({ malla: m, fase: Math.random() * 6.28, fuerza: 0.35 + Math.random() * 0.5 });
       aDesechar.push(mat);
     }
+  }
+
+  /* El claro: un rayo ancho al final del corredor. Sin él, llegar al final
+     era salir del bosque a un campo oscuro en vez de a un claro. */
+  {
+    const geo = new THREE.PlaneGeometry(26, 48);
+    geo.translate(0, -24, 0);
+    aDesechar.push(geo);
+    const mat = new THREE.MeshBasicMaterial({
+      map: mapas.rayo,
+      color: 0xfff1d2,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+      side: THREE.DoubleSide,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(1.5, 26, -96);
+    m.rotation.z = 0.06;
+    m.renderOrder = 4;
+    escena.add(m);
+    rayos.push({ malla: m, fase: 1.7, fuerza: 1.5 });
+    aDesechar.push(mat);
   }
 
   /* ── Jirones de niebla ───────────────────────────────────────────── */
@@ -284,6 +446,40 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
         fase: Math.random() * 6.28,
         vel: 0.05 + Math.random() * 0.12,
         base: 0.12 + Math.random() * 0.14,
+      });
+      aDesechar.push(mat);
+    }
+  }
+
+  /* ── Niebla de suelo ──────────────────────────────────────────────
+     La que se posa entre los troncos a primera hora. Aparte de ser lo que
+     hace un hayedo a las siete de la mañana, resuelve un problema de
+     encuadre: el suelo cercano no recibe niebla de distancia y se quedaba
+     como una masa oscura ocupando el tercio de abajo. */
+  const nieblasSuelo = [];
+  {
+    const geo = new THREE.PlaneGeometry(86, 7);
+    aDesechar.push(geo);
+    const cuantas = Math.max(3, Math.round(caps.nieblas * 0.7));
+    for (let i = 0; i < cuantas; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: mapas.niebla,
+        color: 0xdbe9de,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        fog: true,
+        side: THREE.DoubleSide,
+      });
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(0, 0.9 + Math.random() * 1.1, 16 - i * 20 - Math.random() * 10);
+      m.renderOrder = 2;
+      escena.add(m);
+      nieblasSuelo.push({
+        malla: m,
+        fase: Math.random() * 6.28,
+        vel: 0.03 + Math.random() * 0.07,
+        base: 0.3 + Math.random() * 0.25,
       });
       aDesechar.push(mat);
     }
@@ -473,6 +669,15 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
       v.malla.position.x = deriva + apertura;
       v.malla.material.opacity = st.velo * v.base * (v.portal ? 1 - st.entrada * 0.55 : 1);
       v.malla.visible = v.malla.material.opacity > 0.006;
+    }
+
+    // ── Niebla de suelo ───────────────────────────────────────────────
+    for (const n of nieblasSuelo) {
+      n.malla.position.x = Math.sin(reloj * n.vel + n.fase) * 9;
+      // El velo se aclara con la distancia recorrida para que la escena
+      // nocturna quede más cerrada y el claro del final, despejado.
+      n.malla.material.opacity = st.velo * n.base;
+      n.malla.visible = n.malla.material.opacity > 0.006;
     }
 
     // ── Motas ─────────────────────────────────────────────────────────

@@ -249,3 +249,192 @@ export function texturaCielo() {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+
+/* --------------------------------------------------------------------------
+   Fase 2 · texturas para el arbolado con geometría
+   -------------------------------------------------------------------------- */
+
+/** Repetible en las dos direcciones, para envolver troncos y cubrir el suelo. */
+function repetible(t, x = 1, y = 1) {
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(x, y);
+  return t;
+}
+
+/**
+ * Corteza. Vetas verticales con musgo prendido en el lado de sombra: es una
+ * umbría, y ahí el musgo crece en el tronco, no sólo en el suelo.
+ * Se tiñe por instancia desde la escena, así que aquí interesa el RELIEVE,
+ * no el color: la textura es casi gris.
+ */
+export function texturaCorteza() {
+  const t = lienzo(256, 512, (ctx, w, h) => {
+    const azar = azarCon(9001);
+    ctx.fillStyle = '#8a8a86';
+    ctx.fillRect(0, 0, w, h);
+
+    // Vetas: tiras verticales con grietas
+    for (let i = 0; i < 120; i++) {
+      const x = azar() * w;
+      const ancho = w * (0.008 + azar() * 0.035);
+      const claro = azar() > 0.5;
+      ctx.fillStyle = claro
+        ? `rgba(255,255,255,${0.04 + azar() * 0.1})`
+        : `rgba(0,0,0,${0.06 + azar() * 0.18})`;
+      let y = -h * 0.1;
+      while (y < h) {
+        const largo = h * (0.12 + azar() * 0.35);
+        ctx.fillRect(x + (azar() - 0.5) * w * 0.012, y, ancho, largo);
+        y += largo + h * 0.02 * azar();
+      }
+    }
+
+    // Musgo: manchas verdosas, agrupadas hacia un lado
+    for (let i = 0; i < 44; i++) {
+      const x = (azar() * 0.55 + 0.05) * w;
+      const y = azar() * h;
+      const r = w * (0.03 + azar() * 0.09);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(120,150,110,${0.16 + azar() * 0.2})`);
+      g.addColorStop(1, 'rgba(120,150,110,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  t.colorSpace = THREE.SRGBColorSpace;
+  return repetible(t, 2, 1);
+}
+
+/**
+ * Racimo de follaje. No es una hoja suelta: es un puñado de hojas solapadas
+ * con el canto comido, que es lo que evita que la copa se lea como un recorte.
+ */
+export function texturaFollaje(semilla = 1) {
+  return sinMipmaps(
+    lienzo(256, 256, (ctx, w, h) => {
+      const azar = azarCon(semilla * 7723);
+      ctx.fillStyle = '#ffffff';
+      const hojas = 34;
+      for (let i = 0; i < hojas; i++) {
+        // Se agrupan hacia el centro con caída suave hacia los bordes
+        const a = azar() * Math.PI * 2;
+        const r = Math.pow(azar(), 0.62) * w * 0.44;
+        const x = w / 2 + Math.cos(a) * r;
+        const y = h / 2 + Math.sin(a) * r * 0.82;
+        const s = w * (0.05 + azar() * 0.085);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(azar() * Math.PI);
+        ctx.globalAlpha = 0.72 + azar() * 0.28;
+        ctx.beginPath();
+        ctx.moveTo(0, -s);
+        ctx.bezierCurveTo(s * 0.9, -s * 0.3, s * 0.75, s * 0.6, 0, s);
+        ctx.bezierCurveTo(-s * 0.75, s * 0.6, -s * 0.9, -s * 0.3, 0, -s);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+      // El canto se deshilacha para que no quede un contorno de galleta
+      ctx.globalCompositeOperation = 'destination-out';
+      for (let i = 0; i < 90; i++) {
+        const a = azar() * Math.PI * 2;
+        const r = w * (0.34 + azar() * 0.2);
+        const x = w / 2 + Math.cos(a) * r;
+        const y = h / 2 + Math.sin(a) * r * 0.85;
+        const s = w * (0.03 + azar() * 0.07);
+        ctx.beginPath();
+        ctx.arc(x, y, s, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }),
+  );
+}
+
+/**
+ * Suelo: hojarasca sobre musgo. Va muy apagada a propósito — con la niebla
+ * encima, lo único que tiene que hacer es quitarle al suelo la uniformidad de
+ * plano infinito cuando se pasa cerca.
+ */
+export function texturaSuelo() {
+  const t = lienzo(512, 512, (ctx, w, h) => {
+    const azar = azarCon(4127);
+    ctx.fillStyle = '#2b3a2c';
+    ctx.fillRect(0, 0, w, h);
+
+    /*
+     * Repetir sin costura.
+     *
+     * Dibujar formas sueltas y luego poner la textura en modo repetición deja
+     * una rejilla visible: lo que toca el borde se corta en seco. Cada mancha
+     * se pinta nueve veces, una por cada desplazamiento de baldosa, así que lo
+     * que sale por un lado entra por el otro y la junta desaparece.
+     */
+    const enLasNueve = (x, y, pintar) => {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) pintar(x + dx * w, y + dy * h);
+      }
+    };
+
+    // Musgo: manchas grandes y suaves
+    for (let i = 0; i < 80; i++) {
+      const x = azar() * w;
+      const y = azar() * h;
+      const r = w * (0.04 + azar() * 0.12);
+      const verde = 44 + Math.floor(azar() * 36);
+      enLasNueve(x, y, (px, py) => {
+        const g = ctx.createRadialGradient(px, py, 0, px, py, r);
+        g.addColorStop(0, `rgba(${verde - 12},${verde + 22},${verde - 6},.5)`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(px - r, py - r, r * 2, r * 2);
+      });
+    }
+
+    // Hojarasca: pequeña y apagada. Con hojas grandes y claras el suelo se
+    // convertía en una alfombra de pétalos.
+    for (let i = 0; i < 300; i++) {
+      const x = azar() * w;
+      const y = azar() * h;
+      const s = w * (0.005 + azar() * 0.012);
+      const giro = azar() * Math.PI;
+      const seca = azar() > 0.65;
+      const color = seca
+        ? `rgba(96,78,50,${0.16 + azar() * 0.2})`
+        : `rgba(24,36,26,${0.2 + azar() * 0.3})`;
+      enLasNueve(x, y, (px, py) => {
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(giro);
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s * 2.2, s, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    // Ramitas: lo que de verdad dice «suelo de hayedo»
+    for (let i = 0; i < 40; i++) {
+      const x = azar() * w;
+      const y = azar() * h;
+      const largo = w * (0.02 + azar() * 0.05);
+      const giro = azar() * Math.PI;
+      enLasNueve(x, y, (px, py) => {
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(giro);
+        ctx.strokeStyle = `rgba(70,58,40,${0.2 + azar() * 0.2})`;
+        ctx.lineWidth = Math.max(1, w * 0.0035);
+        ctx.beginPath();
+        ctx.moveTo(-largo, 0);
+        ctx.lineTo(largo, w * 0.004);
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+  });
+  t.colorSpace = THREE.SRGBColorSpace;
+  return repetible(t, 40, 40);
+}

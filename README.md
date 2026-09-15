@@ -73,8 +73,20 @@ rayo que se cuela, unas luciérnagas, el oro de un rótulo. Lo demás es sombra.
 
 En la escena hay, siempre: viento en la copa de los árboles y en los helechos,
 polen en suspensión, hojas que caen volteando, rayos que se mecen, jirones de
-niebla a la deriva y un balanceo mínimo de cámara, como el de alguien que
-camina mirando alrededor.
+niebla a la deriva —altos y posados en el suelo— y un balanceo mínimo de
+cámara, como el de alguien que camina mirando alrededor.
+
+**El arbolado es geometría, no recortes.** Cada tronco es un cilindro con
+conicidad, inclinación propia y bultos de raíz, con su tono, y sólo la copa
+sigue siendo un aspa de planos: es donde un recorte se disimula entre hoja y
+niebla, mientras que el tronco es lo que cruza a un palmo del objetivo. El
+suelo está subdividido y ondulado, con la senda llana para que no suba y baje
+delante de la cámara.
+
+**La luz no está para iluminar, está para dar forma.** Va deliberadamente baja:
+subirla hasta ver bien el bosque destruye lo que hace que esto funcione, que es
+que las cosas sean siluetas oscuras recortadas contra la niebla clara. Lo único
+que aporta —y era lo que faltaba— es que un tronco tenga un lado y otro.
 
 **Paleta.** Del suelo hacia la luz:
 
@@ -133,8 +145,8 @@ src/
   estilos/estilo.css    todo el diseño
   tipos/                las dos tipografías variables
   lib/util.js           interpolación, curvas, medida del equipo
-  bosque/escena.js      el bosque 3D y el recorrido de cámara
-  bosque/texturas.js    árboles, helechos, niebla, rayos: dibujados en lienzo
+  bosque/escena.js      el bosque 3D, la luz y el recorrido de cámara
+  bosque/texturas.js    corteza, follaje, suelo, niebla, rayos: en lienzo
   bosque/particulas.js  polen, luciérnagas y hojas, con su sombreador
   arte/paisaje.js       los paisajes de la galería, tarjetas y linterna
   ui/                   cursor, revelados, marquesina, linterna, contenido
