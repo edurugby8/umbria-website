@@ -1,7 +1,7 @@
 # Publica UMBRÍA en GitHub Pages en cada empujón a `main`.
 #
-# Requiere UNA vez, a mano: Settings → Pages → Source: «GitHub Actions».
-# A partir de ahí, este flujo compila y publica solo.
+# El flujo se encarga de todo, incluido habilitar Pages la primera vez
+# (`enablement: true` más abajo). No hay que tocar nada a mano.
 name: Publicar en GitHub Pages
 
 on:
@@ -31,7 +31,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       # `npm ci` en vez de `npm install`: instala exactamente lo que dice el
@@ -42,7 +42,12 @@ jobs:
       - name: Compilar
         run: npm run build
 
+      # `enablement: true` habilita Pages en el repositorio la primera vez, en
+      # lugar de fallar pidiendo que se active a mano. Es lo que necesita el
+      # permiso `pages: write` declarado arriba.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
