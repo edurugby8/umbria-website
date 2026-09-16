@@ -9,7 +9,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 4300",
-    "pruebas": "node pruebas.mjs"
+    "pruebas": "node pruebas.mjs",
+    "verificar": "npm run build && node pruebas.mjs"
   },
   "dependencies": {
     "gsap": "3.12.5",

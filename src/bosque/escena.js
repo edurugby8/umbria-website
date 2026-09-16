@@ -24,7 +24,7 @@ import {
   texturaFollaje,
   texturaSuelo,
   texturaLejania,
-  juegoDeHojas,
+  bibliotecaVegetacion,
 } from './texturas.js';
 import { crearMotas } from './particulas.js';
 import { crearHojasCerca, TOPE_HOJAS } from './hojas-cerca.js';
@@ -738,7 +738,7 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
      de la cámara. Ver `hojas-cerca.js`. */
   const hojasCerca = crearHojasCerca({
     camara,
-    juego: juegoDeHojas(),
+    biblioteca: bibliotecaVegetacion(caps.nivel),
     caps,
     reducido,
     ajustes: AJUSTES,
@@ -763,6 +763,11 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
   // función pura del scroll—, sólo empuja las hojas cercanas y la brisa.
   let scrollAnterior = window.scrollY;
   let velScroll = 0;
+  /* La luz clave, expresada en ESPACIO DE CÁMARA. Las hojas cercanas cuelgan
+     de la cámara, así que su espacio local ES el de la cámara: para que se
+     iluminen con el mismo sol que el bosque hay que darles la dirección ya
+     transformada. Se calcula una vez por fotograma y se comparte. */
+  const luzEnCamara = new THREE.Vector3();
 
   /* Freno automático.
    *
@@ -983,6 +988,16 @@ export function montarBosque({ contenedor, caps, reducido, alPintar }) {
     luciernagas.objeto.position.z = st.camZ - 22;
     hojas.objeto.position.z = st.camZ - 34;
     brillos.objeto.position.z = st.camZ - 16;
+
+    /* La luz clave, llevada al espacio de la cámara para la capa cercana.
+       `transformDirection` normaliza y sólo aplica la rotación, que es lo que
+       corresponde a una dirección: aplicarle la traslación la estropearía. */
+    luzEnCamara
+      .copy(luzClave.position)
+      .sub(luzClave.target.position)
+      .normalize()
+      .transformDirection(camara.matrixWorldInverse);
+    hojasCerca.fijarLuz(luzEnCamara, luzClave.color);
 
     // ── Capa 0: las hojas que rozan la cara ───────────────────────────
     // La entrada empieza con el follaje CERRADO sobre el objetivo y se abre:

@@ -148,7 +148,9 @@ src/
   bosque/ajustes.js     LOS MANDOS: todos los números que se pueden tocar
   bosque/escena.js      el bosque 3D, la luz y el recorrido de cámara
   bosque/hojas-cerca.js la capa que roza la cara: cuelga de la cámara
-  bosque/texturas.js    corteza, follaje, suelo, niebla, rayos, hojas
+  bosque/hoja-geometria.js  perfiles curvados: la hoja deja de ser un plano
+  bosque/hoja-material.js   el sombreador que le da volumen y contraluz
+  bosque/texturas.js    corteza, follaje, suelo, niebla, rayos, vegetación
   bosque/particulas.js  polen, luciérnagas y hojas, con su sombreador
   arte/paisaje.js       los paisajes de la galería, tarjetas y linterna
   ui/                   cursor, revelados, marquesina, linterna, contenido
@@ -176,6 +178,45 @@ niebla y por luz**, cada una moviéndose a su ritmo:
 | 4 | Línea de árboles | a 150 m, viajando con la cámara | que el fondo no se corte en seco |
 
 Entre todas va la niebla exponencial, que es la que las separa.
+
+### De dónde sale el volumen de una hoja
+
+Durante dos fases estas piezas fueron cuadriláteros de CUATRO vértices con
+`MeshBasicMaterial`. Ese material, por definición, **no recibe luz**: su color
+es la textura por una constante. Daba igual dónde estuviera el sol. Y cuatro
+vértices no dan superficie donde pueda verse un degradado. Con esos dos
+mimbres el volumen era imposible, y lo que se veía eran calcomanías.
+
+Ahora cada pieza es una malla curvada de 20 a 48 vértices con su propio
+sombreador (`hoja-geometria.js` y `hoja-material.js`). Cinco cosas la levantan:
+
+1. **Geometría acucharada.** La sección se curva sobre el nervio, la punta se
+   vence y hay un alabeo helicoidal. Sin eso no hay dónde poner la luz.
+2. **Dos caras distintas.** La normal se voltea con `gl_FrontFacing`, así que
+   el lado que mira al sol y el que está en sombra no se parecen.
+3. **Transmisión.** Cuando el sol queda DETRÁS, el limbo deja pasar la luz.
+   Es lo que hace que se lea como material vivo y no como papel.
+4. **Halo del canto**, un `fresnel` mínimo y sólo a contraluz.
+5. **Viento con torsión en el vértice**: la fuerza va con el cuadrado de la
+   altura, así que la punta se mueve y la base se queda sujeta, y la hoja se
+   retuerce sobre su nervio. La normal gira con ella.
+
+Y el desenfoque por distancia dejó de ser tres copias horneadas de cada forma:
+las texturas llevan mipmaps y el sombreador pide el nivel con un sesgo sacado
+de la profundidad. Sale **continuo**, sin escalones, y ocupa un tercio de
+memoria que las tres copias.
+
+### Nueve formas, no una rotada
+
+`haya · roble · acebo · avellano · castaño · grupo de tres · ramita · fronda ·
+fragmento de rama`, cada una con dos semillas. Llevan agujeros de bicho,
+mordiscos en el canto y los dos lados asimétricos. El acebo está porque lo
+nombra el propio texto de la página.
+
+Y no todas viajan: unas cuantas **asoman** desde un borde con la base fuera del
+encuadre, se mecen y se retiran. Eso es lo que hacía falta para que la capa
+pareciese parte de un árbol; una rama que nace fuera de cuadro cuenta que ahí
+al lado hay un tronco.
 
 ### Cómo se consigue que una hoja roce la cara
 
@@ -207,10 +248,16 @@ Para probar otros valores sin recompilar, abre la página con `?ajustes`:
 http://localhost:4300/umbria-website/?ajustes
 ```
 
-Sale un panel con los once deslizadores (cuántas hojas, velocidad, desenfoque,
-presencia, paralaje, distancia y movimiento de cámara, intensidad y color de
-luz, niebla, partículas y brisa). Cuando el ajuste esté bien, **Copiar valores**
-deja el objeto listo para pegar en `ajustes.js`.
+Sale un panel con veinticinco deslizadores repartidos en cinco secciones
+—cuánta vegetación, tamaño y distancia, movimiento, materia de la hoja, y luz y
+aire— y cuatro **configuraciones comparables**: `Anterior` (cómo iba antes de
+esta fase, para ver el cambio), `Natural` (**la publicada**), `Cinematográfica`
+(menos piezas, más grandes, más desenfoque y contraluz) e `Intensa` (bosque
+cerrado, mucha hoja y mucho viento). Cuando el ajuste esté bien, **Copiar
+valores** deja el objeto listo para pegar en `ajustes.js`.
+
+`AJUSTES` y la configuración `natural` tienen que coincidir clave por clave: la
+pública es una sola.
 
 El panel **no existe en la visita normal**: se carga con `import()` dinámico y
 sólo si está el parámetro, así que ni siquiera entra en el paquete principal.
@@ -258,6 +305,25 @@ sólo si está el parámetro, así que ni siquiera entra en el paquete principal
   quemar los verdes claros.
 - **Los rayos caen todos hacia el mismo lado que la luz clave.** Un rayo
   apuntando al revés de la sombra delata la escena al instante.
+- **El difuso de la vegetación va ENVUELTO, no recortado.** Con
+  `max(dot(N,L), 0)`, una hoja cuya normal mire a la cámara y un sol que venga
+  de arriba dan cero: la hoja se apaga del todo. Y eso pasa casi siempre en la
+  capa cercana, porque esas piezas miran al objetivo por definición. Llevar el
+  producto escalar de [−1,1] a [0,1] antes de elevarlo reparte la luz alrededor
+  del terminador, que es como se sombrea la vegetación desde siempre: una hoja
+  es fina y translúcida, no una bola de billar.
+- **Las piezas cercanas se ladean en las TRES dimensiones.** Si todas miran de
+  frente, sus normales apuntan al mismo sitio, todas reciben la misma luz y
+  vuelven a leerse como recortes. El ladeo es lo que hace que una coja el sol
+  de plano y la de al lado se encienda por transmisión.
+- **La vegetación cercana es MÁS OSCURA que la niebla del fondo.** Se lee por
+  silueta contra la bruma. Una hoja más clara que el aire flota.
+- **Ni un acento grave dentro de los literales de sombreador.** Uno solo,
+  aunque esté dentro de un comentario de GLSL, cierra la cadena de JavaScript.
+  Y la compilación falla de una forma que es fácil no ver si uno mira el final
+  de la salida en vez del código de salida: se sirve el `dist` anterior y todo
+  parece funcionar mientras se prueba una versión vieja. `npm run verificar`
+  compila y prueba en un solo paso justamente por esto.
 
 ### Imágenes
 
@@ -336,8 +402,8 @@ npm run pruebas                      # en otra
 
 Necesita Playwright (`npx playwright install chromium`; si el navegador ya está
 en otra ruta, se pasa en `CHROMIUM`). Son veintisiete comprobaciones repartidas
-en cinco escenarios: escritorio, movimiento reducido, móvil, sin WebGL y capas
-de profundidad. Cubren que la pantalla de carga se retire, que el contenido se
+en seis escenarios: escritorio, movimiento reducido, móvil, sin WebGL, capas de
+profundidad y vegetación cercana. Cubren que la pantalla de carga se retire, que el contenido se
 construya, que los revelados dejen el texto a la vista, que los lienzos se
 pinten de verdad, que la linterna siga al puntero, que **la rueda no esté
 secuestrada**, el control de movimiento, «Volver a entrar», que no haya
@@ -346,11 +412,22 @@ cuelguen de la cámara y viajen de verdad, que **la pose no acumule estado**
 (bajar a un punto y volver a él desde más abajo da la misma cámara) y que el
 panel de ajustes no asome en la visita normal.
 
-Un detalle de las pruebas que merece la pena conservar: donde hay que esperar a
-que la escena se asiente, **se cuentan fotogramas pintados, no milisegundos**.
-Bajo renderizado por software un fotograma puede durar casi un segundo, y
-cualquier plazo fijo o bien se queda corto o bien da por buena una escena que
-ni siquiera ha vuelto a pintar.
+Se comprueba además que la hoja sea una malla curvada y no un plano, que lleve
+sombreador propio, que todas compartan un único programa compilado, que el sol
+llegue como dirección en espacio de cámara, que haya variedad de especies y
+piezas ancladas al borde, que el desenfoque tenga muchos valores distintos —no
+tres escalones— y que **nada se plante opaco sobre la zona del texto**.
+
+Dos detalles de las pruebas que merece la pena conservar:
+
+- Donde hay que esperar a que la escena se asiente, **se cuentan fotogramas
+  pintados, no milisegundos**. Bajo renderizado por software un fotograma puede
+  durar casi un segundo, y cualquier plazo fijo o bien se queda corto o bien da
+  por buena una escena que ni siquiera ha vuelto a pintar. Una comprobación de
+  los revelados fallaba una de cada cuatro veces por esto: no era frágil por
+  casualidad, medía el tiempo equivocado.
+- Donde se espera a que pase algo, se espera a **la condición**, no a un plazo.
+  El desplazamiento suave de un anclaje tarda lo que tarde en fotogramas.
 
 ## Licencias
 

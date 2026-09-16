@@ -449,16 +449,28 @@ export function texturaSuelo() {
 }
 
 /* ────────────────────────────────────────────────────────────────────
-   Hojas de primer plano
+   Vegetación de primer plano
    ────────────────────────────────────────────────────────────────────
 
-   Las que pasan a un palmo del objetivo no pueden ser la misma silueta de
-   64 px que usan las motas: ahí se ve el canto, la nervadura y hasta la luz
-   que las atraviesa. Se dibujan grandes (512 px), con el borde irregular y
-   con sombreado interno, y de cada forma se guardan tres copias con distinto
-   difuminado. La copia difuminada es la que llevan las que pasan MÁS cerca:
-   así el desenfoque de profundidad sale gratis, sin tocar el sombreador ni
-   pasar por un paso de posprocesado. */
+   Las piezas que pasan a un palmo del objetivo son las que el visitante mira
+   con más detalle, así que son las que más variedad necesitan. Aquí hay NUEVE
+   especies y formas distintas —haya, roble, acebo, avellano, castaño, un
+   grupo de tres, una ramita, una fronda de helecho y un fragmento de rama—,
+   cada una con dos semillas, y ninguna es otra rotada.
+
+   Dos decisiones que importan:
+
+   · CON MIPMAPS, al revés que el resto de recortes del bosque. Estas van con
+     mezcla alfa, no con `alphaTest`, así que no sufren el artefacto del
+     cuadrado pálido; y teniendo mipmaps el sombreador puede pedir el nivel
+     que quiera con un sesgo y conseguir un desenfoque CONTINUO. Antes había
+     tres copias prehorneadas de cada forma: se veía el salto entre niveles y
+     además ocupaba el triple de memoria.
+
+   · EL SOMBREADO YA NO SE PINTA. Antes la textura llevaba su luz y su sombra
+     dibujadas, siempre iguales, mirase donde mirase el sol. Ahora sólo lleva
+     la FORMA, la nervadura y las imperfecciones; la luz la pone el material
+     con la del bosque. */
 
 /** Recorta el borde para que no quede el óvalo perfecto de un plástico. */
 function bordeIrregular(ctx, s, azar, vueltas = 26) {
@@ -473,10 +485,45 @@ function bordeIrregular(ctx, s, azar, vueltas = 26) {
   ctx.globalCompositeOperation = 'source-over';
 }
 
-/** Nervadura: se resta del alfa, así se lee como un surco y no como pintura. */
-function nervadura(ctx, s, ramas, ancho) {
+/**
+ * Imperfecciones: un agujero de bicho, un mordisco en el canto, una mancha
+ * seca. Ninguna hoja de un bosque de verdad está entera, y es de esas cosas
+ * que no se notan hasta que faltan: sin ellas todas parecen recién estampadas.
+ */
+function imperfecciones(ctx, s, azar, cuantas = 2) {
   ctx.globalCompositeOperation = 'destination-out';
-  ctx.strokeStyle = 'rgba(0,0,0,.42)';
+  for (let i = 0; i < cuantas; i++) {
+    if (azar() < 0.35) continue;
+    const x = s * (0.22 + azar() * 0.56);
+    const y = s * (0.2 + azar() * 0.6);
+    const r = s * (0.012 + azar() * 0.04);
+    ctx.beginPath();
+    // Un agujero de bicho no es un círculo: es un borde roído
+    for (let k = 0; k <= 10; k++) {
+      const a = (k / 10) * 6.283;
+      const rr = r * (0.6 + azar() * 0.8);
+      const px = x + Math.cos(a) * rr;
+      const py = y + Math.sin(a) * rr;
+      k === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Mordisco en el canto
+  if (azar() < 0.45) {
+    const lado = azar() > 0.5 ? 1 : -1;
+    ctx.beginPath();
+    ctx.arc(s / 2 + lado * s * (0.22 + azar() * 0.16), s * (0.25 + azar() * 0.5),
+      s * (0.05 + azar() * 0.06), 0, 6.283);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/** Nervadura: se resta del alfa, así se lee como un surco y no como pintura. */
+function nervadura(ctx, s, ramas, ancho, curva = 0.09) {
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.strokeStyle = 'rgba(0,0,0,.4)';
   ctx.lineCap = 'round';
   ctx.lineWidth = s * ancho;
   ctx.beginPath();
@@ -490,177 +537,312 @@ function nervadura(ctx, s, ramas, ancho) {
     const alcance = s * 0.3 * Math.sin(t * Math.PI) * 1.5;
     ctx.beginPath();
     ctx.moveTo(s / 2, y);
-    ctx.lineTo(s / 2 + alcance, y + s * 0.09);
+    ctx.lineTo(s / 2 + alcance, y + s * curva);
     ctx.moveTo(s / 2, y);
-    ctx.lineTo(s / 2 - alcance, y + s * 0.09);
+    // Los dos lados NO salen a la misma altura: así es una hoja de verdad
+    ctx.moveTo(s / 2, y + s * 0.02);
+    ctx.lineTo(s / 2 - alcance * 0.92, y + s * curva * 1.15);
     ctx.stroke();
   }
   ctx.globalCompositeOperation = 'source-over';
 }
 
 /**
- * Sombreado interno. El material multiplica el mapa por el color, así que
- * pintar grises aquí es pintar sombra: un lado en penumbra, el otro con la
- * luz pasando a través. Es lo que separa una hoja de una calcomanía.
- */
-function cuerpoDeHoja(ctx, s, azar) {
-  ctx.globalCompositeOperation = 'source-atop';
-  const g = ctx.createLinearGradient(s * 0.1, 0, s * 0.9, s);
-  g.addColorStop(0, 'rgba(255,255,255,0)');
-  g.addColorStop(0.42, 'rgba(90,110,80,.30)');
-  g.addColorStop(1, 'rgba(24,36,26,.52)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, s, s);
-  // Zona translúcida: por donde el sol atraviesa el limbo
-  const luz = ctx.createRadialGradient(s * 0.38, s * 0.34, 0, s * 0.38, s * 0.34, s * 0.5);
-  luz.addColorStop(0, 'rgba(255,255,255,.55)');
-  luz.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = luz;
-  ctx.fillRect(0, 0, s, s);
-  // Manchas: ninguna hoja es de un solo tono
-  for (let i = 0; i < 16; i++) {
-    const r = s * (0.03 + azar() * 0.09);
-    ctx.fillStyle = `rgba(${azar() > 0.5 ? '210,215,170' : '60,78,54'},${0.05 + azar() * 0.12})`;
-    ctx.beginPath();
-    ctx.arc(azar() * s, azar() * s, r, 0, 6.283);
-    ctx.fill();
-  }
-  ctx.globalCompositeOperation = 'source-over';
-}
-
-const FORMAS = 4;
-
-/**
- * Una hoja de primer plano.
+ * Relieve muy suave dentro del limbo.
  *
- * @param {number} forma  0 haya · 1 roble lobulado · 2 ramita compuesta · 3 fronda
- * @param {number} semilla  para que dos hojas de la misma forma no sean gemelas
- * @param {number} difuminado  píxeles de desenfoque (0 = nítida)
+ * Ojo: esto NO es sombreado direccional —de eso se encarga el material con la
+ * luz del bosque—. Es sólo la variación de tono que tiene una hoja por sí
+ * misma: el limbo algo más claro que los nervios, alguna mancha seca. Pintar
+ * aquí una luz fija es lo que hacía que la hoja se viese igual mirase donde
+ * mirase el sol.
  */
-export function texturaHojaCerca(forma = 0, semilla = 1, difuminado = 0) {
-  const S = 512;
-  const dibujo = document.createElement('canvas');
-  dibujo.width = S;
-  dibujo.height = S;
-  const ctx = dibujo.getContext('2d');
-  const azar = azarCon(semilla * 2357 + forma * 91 + 7);
-  if (!ctx) return sinMipmaps(lienzo(4, 4, () => {}));
+function tejido(ctx, s, azar) {
+  ctx.globalCompositeOperation = 'source-atop';
+  for (let i = 0; i < 18; i++) {
+    const r = s * (0.03 + azar() * 0.1);
+    const claro = azar() > 0.45;
+    ctx.fillStyle = claro
+      ? `rgba(226,232,206,${0.05 + azar() * 0.1})`
+      : `rgba(74,84,60,${0.05 + azar() * 0.13})`;
+    ctx.beginPath();
+    ctx.ellipse(azar() * s, azar() * s, r, r * (0.5 + azar() * 0.8), azar() * 3, 0, 6.283);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
 
-  ctx.fillStyle = '#ffffff';
+/** Media hoja, dibujada lado a lado con controles distintos: nada simétrico. */
+function medioLimbo(ctx, s, lado, ancho, hombro, punta, azar) {
+  const c = s / 2;
+  ctx.moveTo(c, s * punta);
+  ctx.bezierCurveTo(
+    c + lado * s * ancho * (0.95 + azar() * 0.2), s * hombro,
+    c + lado * s * ancho * (0.82 + azar() * 0.25), s * (0.72 + azar() * 0.1),
+    c + lado * s * 0.02, s * 0.97,
+  );
+}
+
+/** Tallo: se estrecha hacia la punta y nunca va recto. */
+function tallo(ctx, s, largo, grueso, curva, azar) {
+  const c = s / 2;
+  const pasos = 14;
+  ctx.beginPath();
+  for (let lado = 1; lado >= -1; lado -= 2) {
+    for (let i = 0; i <= pasos; i++) {
+      const t = lado > 0 ? i / pasos : 1 - i / pasos;
+      const y = s * (0.99 - t * largo);
+      const x = c + Math.sin(t * 2.1) * s * curva + lado * s * grueso * (1 - t * 0.85);
+      i === 0 && lado > 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+  }
+  ctx.closePath();
+  ctx.fill();
+  // Devuelve por dónde va el tallo, para colgar de ahí las hojas
+  return (t) => ({
+    x: c + Math.sin(t * 2.1) * s * curva,
+    y: s * (0.99 - t * largo),
+  });
+}
+
+/** Un folíolo suelto, para colgarlo de un tallo. */
+function foliolo(ctx, x, y, largo, ancho, ang) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(largo * 0.35, -ancho, largo, -ancho * 0.12);
+  ctx.quadraticCurveTo(largo * 0.35, ancho * 0.85, 0, 0);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Las nueve formas. El nombre es el que usa el resto del sistema. */
+export const ESPECIES = ['haya', 'roble', 'acebo', 'avellano', 'castano', 'grupo', 'ramita', 'fronda', 'rama'];
+
+/** A qué perfil de geometría curvada corresponde cada forma. */
+export const PERFIL_DE = {
+  haya: 'hoja', roble: 'hoja', acebo: 'hoja', avellano: 'hoja', castano: 'hoja',
+  grupo: 'grupo', ramita: 'ramita', fronda: 'fronda', rama: 'rama',
+};
+
+/**
+ * Dibuja una pieza de vegetación cercana.
+ *
+ * Sólo la FORMA: silueta, nervadura, imperfecciones y el tejido propio. La
+ * luz no se pinta aquí; la pone el material con la del bosque.
+ */
+export function texturaVegetacion(especie = 'haya', semilla = 1, lado = 512) {
+  const S = lado;
   const c = S / 2;
+  const azar = azarCon(semilla * 2357 + especie.length * 911 + 13);
 
-  if (forma === 0) {
-    // Haya: óvalo con punta y el borde ondulado
-    ctx.beginPath();
-    ctx.moveTo(c, S * 0.03);
-    ctx.bezierCurveTo(S * 0.98, S * 0.28, S * 0.86, S * 0.80, c, S * 0.98);
-    ctx.bezierCurveTo(S * 0.14, S * 0.80, S * 0.02, S * 0.28, c, S * 0.03);
-    ctx.fill();
-    nervadura(ctx, S, 7, 0.018);
-  } else if (forma === 1) {
-    // Roble: lóbulos alternos alrededor del nervio
-    ctx.beginPath();
-    ctx.moveTo(c, S * 0.04);
-    for (let lado = 1; lado >= -1; lado -= 2) {
-      const pasos = 6;
-      for (let i = 0; i < pasos; i++) {
-        const t = lado > 0 ? i / pasos : 1 - i / pasos;
-        const y = S * (0.06 + t * 0.88);
-        const w = S * (0.16 + Math.sin(t * Math.PI) * 0.3) * (0.72 + azar() * 0.5);
-        ctx.quadraticCurveTo(c + lado * w * 1.25, y - S * 0.045, c + lado * w * 0.55, y);
-        ctx.quadraticCurveTo(c + lado * w * 0.2, y + S * 0.035, c + lado * w * 0.62, y + S * 0.06);
-      }
-    }
-    ctx.closePath();
-    ctx.fill();
-    nervadura(ctx, S, 6, 0.016);
-  } else if (forma === 2) {
-    // Ramita: un tallo con cinco folíolos. Rompe el «todo son hojas sueltas»
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineCap = 'round';
-    ctx.lineWidth = S * 0.028;
-    ctx.beginPath();
-    ctx.moveTo(c * 0.94, S * 0.99);
-    ctx.quadraticCurveTo(c, S * 0.5, c * 1.06, S * 0.05);
-    ctx.stroke();
-    for (let i = 0; i < 5; i++) {
-      const t = 0.12 + i * 0.19;
-      const lado = i % 2 ? 1 : -1;
-      const y = S * (1 - t);
-      const largo = S * (0.17 + azar() * 0.13);
-      const ang = lado * (0.7 + azar() * 0.5);
-      ctx.save();
-      ctx.translate(c + lado * S * 0.02, y);
-      ctx.rotate(ang);
+  const t = lienzo(S, S, (ctx) => {
+    ctx.fillStyle = '#ffffff';
+
+    if (especie === 'haya') {
+      // Óvalo con punta y el canto ondulado. Los dos lados, distintos.
       ctx.beginPath();
-      ctx.ellipse(largo * 0.55, 0, largo * 0.55, largo * 0.25, 0, 0, 6.283);
+      medioLimbo(ctx, S, 1, 0.42, S * 0.0005 + 0.3, 0.03, azar);
+      medioLimbo(ctx, S, -1, 0.39, 0.27, 0.03, azar);
       ctx.fill();
-      ctx.restore();
-    }
-  } else {
-    // Fronda: pinnas cada vez más cortas hacia la punta
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineCap = 'round';
-    ctx.lineWidth = S * 0.022;
-    ctx.beginPath();
-    ctx.moveTo(c, S * 0.99);
-    ctx.quadraticCurveTo(c * 1.18, S * 0.45, c * 0.86, S * 0.04);
-    ctx.stroke();
-    for (let i = 0; i < 13; i++) {
-      const t = i / 13;
-      const y = S * (0.95 - t * 0.88);
-      const x = c + Math.sin(t * 1.6) * S * 0.09;
-      const largo = S * 0.26 * (1 - t * 0.78) * (0.8 + azar() * 0.45);
-      for (const lado of [-1, 1]) {
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(lado * (0.95 + azar() * 0.25));
+      nervadura(ctx, S, 7, 0.016);
+    } else if (especie === 'roble') {
+      // Lóbulos alternos, ninguno igual al de enfrente
+      ctx.beginPath();
+      ctx.moveTo(c, S * 0.04);
+      for (const lado2 of [1, -1]) {
+        const pasos = 6;
+        for (let i = 0; i < pasos; i++) {
+          const tt = lado2 > 0 ? i / pasos : 1 - i / pasos;
+          const y = S * (0.06 + tt * 0.88);
+          const w = S * (0.14 + Math.sin(tt * Math.PI) * 0.29) * (0.68 + azar() * 0.6);
+          ctx.quadraticCurveTo(c + lado2 * w * 1.3, y - S * 0.05, c + lado2 * w * 0.5, y);
+          ctx.quadraticCurveTo(c + lado2 * w * 0.16, y + S * 0.04, c + lado2 * w * 0.6, y + S * 0.062);
+        }
+      }
+      ctx.closePath();
+      ctx.fill();
+      nervadura(ctx, S, 6, 0.015, 0.11);
+    } else if (especie === 'acebo') {
+      /* Acebo: el canto va en pinchos. Lo nombra el propio texto de la página
+         —«primero el haya, luego el acebo»—, así que tenía que estar. */
+      ctx.beginPath();
+      ctx.moveTo(c, S * 0.04);
+      for (const lado2 of [1, -1]) {
+        const pinchos = 5;
+        for (let i = 0; i < pinchos; i++) {
+          const tt = lado2 > 0 ? i / pinchos : 1 - i / pinchos;
+          const y = S * (0.08 + tt * 0.84);
+          const w = S * (0.13 + Math.sin(tt * Math.PI) * 0.22) * (0.8 + azar() * 0.4);
+          ctx.lineTo(c + lado2 * w, y);
+          ctx.lineTo(c + lado2 * w * 1.45, y + S * (0.03 + azar() * 0.03));
+          ctx.lineTo(c + lado2 * w * 0.72, y + S * 0.075);
+        }
+      }
+      ctx.closePath();
+      ctx.fill();
+      nervadura(ctx, S, 5, 0.018, 0.07);
+    } else if (especie === 'avellano') {
+      // Redonda, con la base asimétrica y la punta corta
+      ctx.beginPath();
+      ctx.moveTo(c, S * 0.07);
+      ctx.bezierCurveTo(S * 0.99, S * 0.22, S * 0.93, S * 0.76, c + S * 0.04, S * 0.96);
+      ctx.bezierCurveTo(S * 0.1, S * 0.82, S * 0.02, S * 0.26, c, S * 0.07);
+      ctx.fill();
+      nervadura(ctx, S, 8, 0.013, 0.12);
+      // Doble sierra en el canto
+      ctx.globalCompositeOperation = 'destination-out';
+      for (let i = 0; i < 40; i++) {
+        const a = azar() * 6.283;
+        const r = S * 0.44;
         ctx.beginPath();
-        ctx.ellipse(largo * 0.5, 0, largo * 0.5, largo * 0.14, 0, 0, 6.283);
+        ctx.arc(c + Math.cos(a) * r, c + Math.sin(a) * r * 1.02, S * (0.012 + azar() * 0.02), 0, 6.283);
         ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    } else if (especie === 'castano') {
+      // Lanceolada, larga y con el canto en dientes finos
+      ctx.beginPath();
+      ctx.moveTo(c, S * 0.01);
+      ctx.bezierCurveTo(S * 0.78, S * 0.3, S * 0.74, S * 0.75, c + S * 0.01, S * 0.99);
+      ctx.bezierCurveTo(S * 0.28, S * 0.74, S * 0.24, S * 0.28, c, S * 0.01);
+      ctx.fill();
+      nervadura(ctx, S, 11, 0.011, 0.055);
+      ctx.globalCompositeOperation = 'destination-out';
+      for (let i = 0; i < 34; i++) {
+        const tt = i / 34;
+        const y = S * (0.06 + tt * 0.88);
+        const w = S * 0.24 * Math.sin(tt * Math.PI) + S * 0.02;
+        const l2 = i % 2 ? 1 : -1;
+        ctx.beginPath();
+        ctx.arc(c + l2 * w, y, S * 0.017, 0, 6.283);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    } else if (especie === 'grupo') {
+      /* Tres hojas del mismo pecíolo. Esto es lo que impedía que la capa
+         pareciese parte de un árbol: hojas sueltas flotando, nunca un
+         conjunto que se mueva a la vez. */
+      const eje = tallo(ctx, S, 0.3, 0.012, 0.02, azar);
+      const base = eje(0.28);
+      const cuantas = azar() > 0.45 ? 3 : 2;
+      for (let i = 0; i < cuantas; i++) {
+        const ang = -Math.PI / 2 + (i - (cuantas - 1) / 2) * (0.55 + azar() * 0.25);
+        const largo = S * (0.42 + azar() * 0.16);
+        ctx.save();
+        ctx.translate(base.x, base.y);
+        ctx.rotate(ang);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(largo * 0.3, -largo * 0.3, largo * 0.85, -largo * 0.16, largo, 0);
+        ctx.bezierCurveTo(largo * 0.85, largo * 0.2, largo * 0.3, largo * 0.26, 0, 0);
+        ctx.fill();
+        // Nervio del folíolo
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.strokeStyle = 'rgba(0,0,0,.4)';
+        ctx.lineWidth = S * 0.008;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(largo * 0.94, 0);
+        ctx.stroke();
+        ctx.globalCompositeOperation = 'source-over';
         ctx.restore();
       }
+    } else if (especie === 'ramita') {
+      // Tallo largo con folíolos alternos y alguno ya caído
+      /* Folíolos anchos y numerosos. Con siete estrechos y alternos el
+         dibujo salía en espina de pez —parecía una pluma, no una ramita— y a
+         contraluz se volvía inconfundiblemente un hueso. Una ramita de haya
+         lleva hoja de sobra: lo que se ve es el follaje, no el tallo. */
+      const eje = tallo(ctx, S, 0.94, 0.012, 0.05, azar);
+      for (let i = 0; i < 11; i++) {
+        if (azar() < 0.1) continue; // a una ramita siempre le falta alguna
+        const tt = 0.1 + i * 0.083;
+        const pt = eje(tt);
+        const l2 = i % 2 ? 1 : -1;
+        const largo = S * (0.24 + azar() * 0.13) * (1 - tt * 0.3);
+        foliolo(ctx, pt.x, pt.y, largo * l2, S * (0.09 + azar() * 0.05), l2 * (0.5 + azar() * 0.4));
+      }
+    } else if (especie === 'fronda') {
+      // Fronda de helecho: pinnas cada vez más cortas hacia la punta
+      /* Pinnas cortas y numerosas. Con pocas y largas el resultado se leía
+         como una hoja de palmera, que es cualquier cosa menos una umbría. */
+      const eje = tallo(ctx, S, 0.95, 0.011, 0.07, azar);
+      for (let i = 0; i < 22; i++) {
+        const tt = 0.04 + (i / 22) * 0.93;
+        const pt = eje(tt);
+        const largo = S * 0.17 * (1 - tt * 0.78) * (0.8 + azar() * 0.4);
+        for (const l2 of [-1, 1]) {
+          foliolo(ctx, pt.x, pt.y, largo * l2, S * 0.042 * (1 - tt * 0.45), l2 * (1.0 + azar() * 0.25));
+        }
+      }
+    } else {
+      /* Rama: un fragmento con dos ramificaciones y hojas prendidas. Entra
+         por un lateral y casi siempre se queda a medias fuera del encuadre,
+         que es lo que hace pensar que hay un árbol ahí al lado. */
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineCap = 'round';
+      const dibujarRama = (x0, y0, x1, y1, grueso, hojas) => {
+        ctx.lineWidth = grueso;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.quadraticCurveTo((x0 + x1) / 2 + S * 0.07, (y0 + y1) / 2 - S * 0.05, x1, y1);
+        ctx.stroke();
+        for (let i = 0; i < hojas; i++) {
+          const tt = 0.2 + azar() * 0.75;
+          const x = x0 + (x1 - x0) * tt;
+          const y = y0 + (y1 - y0) * tt;
+          foliolo(ctx, x, y, S * (0.11 + azar() * 0.09) * (azar() > 0.5 ? 1 : -1),
+            S * (0.035 + azar() * 0.03), (azar() - 0.5) * 2.4);
+        }
+      };
+      dibujarRama(S * 0.02, S * 0.86, S * 0.94, S * 0.3, S * 0.035, 6);
+      dibujarRama(S * 0.4, S * 0.66, S * 0.72, S * 0.08, S * 0.02, 4);
+      dibujarRama(S * 0.6, S * 0.53, S * 0.98, S * 0.72, S * 0.016, 3);
     }
-  }
 
-  bordeIrregular(ctx, S, azar, forma < 2 ? 30 : 14);
-  cuerpoDeHoja(ctx, S, azar);
+    bordeIrregular(ctx, S, azar, especie === 'grupo' || ESPECIES.indexOf(especie) < 5 ? 30 : 12);
+    if (ESPECIES.indexOf(especie) < 6) imperfecciones(ctx, S, azar, 3);
+    tejido(ctx, S, azar);
+  });
 
-  // El desenfoque va en un segundo lienzo: `filter` se aplica al DIBUJAR, no
-  // a lo ya dibujado, así que hay que volver a pintar el resultado.
-  if (difuminado > 0) {
-    const salida = document.createElement('canvas');
-    salida.width = S;
-    salida.height = S;
-    const sx = salida.getContext('2d');
-    if (sx) {
-      sx.filter = `blur(${difuminado}px)`;
-      sx.drawImage(dibujo, 0, 0);
-    }
-    const t = new THREE.CanvasTexture(salida);
-    t.anisotropy = 4;
-    return sinMipmaps(t);
-  }
-
-  const t = new THREE.CanvasTexture(dibujo);
-  t.anisotropy = 8;
-  return sinMipmaps(t);
+  /* Mipmaps, al contrario que en el resto de recortes del bosque: son de
+     mezcla alfa, no de `alphaTest`, así que no sufren el artefacto del
+     cuadrado pálido, y gracias a ellos el sombreador puede pedir un nivel
+     más borroso y conseguir el desenfoque por distancia sin copias extra. */
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.anisotropy = 4;
+  t.needsUpdate = true;
+  return t;
 }
 
-/** Las cuatro formas × tres grados de desenfoque, con sus variantes. */
-export function juegoDeHojas() {
-  const juego = [];
-  for (let f = 0; f < FORMAS; f++) {
-    for (let v = 0; v < 2; v++) {
-      juego.push({
-        forma: f,
-        nitida: texturaHojaCerca(f, f * 10 + v + 1, 0),
-        media: texturaHojaCerca(f, f * 10 + v + 1, 5),
-        suave: texturaHojaCerca(f, f * 10 + v + 1, 13),
+/**
+ * La biblioteca completa de vegetación cercana.
+ *
+ * Nueve formas por dos semillas: dieciocho piezas distintas. Con los tres
+ * niveles de desenfoque que había antes y cuatro formas eran veinticuatro
+ * lienzos para doce siluetas; ahora son dieciocho lienzos para dieciocho
+ * siluetas y el desenfoque sale del mipmap.
+ *
+ * @param {'alto'|'medio'|'bajo'} nivel
+ */
+export function bibliotecaVegetacion(nivel = 'medio') {
+  const lado = nivel === 'alto' ? 512 : nivel === 'medio' ? 384 : 256;
+  const semillas = nivel === 'bajo' ? 1 : 2;
+  const biblioteca = [];
+  for (const especie of ESPECIES) {
+    for (let s = 0; s < semillas; s++) {
+      biblioteca.push({
+        especie,
+        perfil: PERFIL_DE[especie],
+        mapa: texturaVegetacion(especie, s * 37 + ESPECIES.indexOf(especie) + 1, lado),
       });
     }
   }
-  return juego;
+  return biblioteca;
 }
 
 /**

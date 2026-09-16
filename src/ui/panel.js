@@ -13,7 +13,7 @@
  * Cuando los valores están bien: «Copiar valores» y pegar en `ajustes.js`.
  */
 
-import { AJUSTES, AJUSTES_BASE } from '../bosque/ajustes.js';
+import { AJUSTES, AJUSTES_BASE, CONFIGURACIONES } from '../bosque/ajustes.js';
 
 const CSS = `
 .pnl{position:fixed;right:14px;bottom:14px;z-index:9000;width:266px;
@@ -51,6 +51,13 @@ const CSS = `
 .pnl__color{width:26px;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.18);
   cursor:pointer;padding:0}
 .pnl__color[aria-pressed=true]{outline:2px solid #d7b06a;outline-offset:2px}
+.pnl__config{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding-top:3px}
+.pnl__config button{appearance:none;border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.05);color:inherit;font:inherit;font-size:10.5px;
+  padding:6px 4px;border-radius:7px;cursor:pointer;text-align:center}
+.pnl__config button:hover{background:rgba(255,255,255,.13)}
+.pnl__config button[aria-pressed=true]{background:rgba(215,176,106,.22);
+  border-color:rgba(215,176,106,.55);color:#f0cd8c}
 .pnl__pie{display:flex;gap:6px;padding:10px 13px 12px;border-top:1px solid rgba(255,255,255,.08)}
 .pnl__pie button{flex:1;appearance:none;border:1px solid rgba(255,255,255,.16);
   background:rgba(255,255,255,.06);color:inherit;font:inherit;font-size:10.5px;
@@ -119,15 +126,36 @@ export function montarPanel(bosque) {
   };
 
   const entero = (v) => String(Math.round(v));
+  const porciento = (v) => `${Math.round(v * 100)} %`;
 
-  seccion('Hojas cercanas');
-  const filaHojas = desliz('hojas', 'Cuántas', 0, bosque?.topeHojas ?? 34, 1, entero);
-  desliz('velocidadHojas', 'Velocidad', 0.2, 2.5, 0.05);
-  desliz('desenfoque', 'Desenfoque', 0, 2, 0.05);
-  desliz('opacidadHojas', 'Presencia', 0.2, 1, 0.02);
+  seccion('Cuánta vegetación');
+  const filaHojas = desliz('hojas', 'Cuántas piezas', 0, bosque?.topeHojas ?? 32, 1, entero);
+  desliz('proporcionHojas', 'Hojas sueltas / conjuntos', 0, 1, 0.02, porciento);
+  desliz('proporcionAsoman', 'Ramas que asoman del borde', 0, 1.4, 0.02);
+  desliz('cruces', 'Cruces completos', 0, 0.6, 0.01, porciento);
 
-  seccion('Profundidad');
-  desliz('paralaje', 'Paralaje', 0, 2, 0.05);
+  seccion('Tamaño y distancia');
+  desliz('tamanoMin', 'Tamaño mínimo', 0.3, 1.4, 0.02);
+  desliz('tamanoMax', 'Tamaño máximo', 0.5, 2, 0.02);
+  desliz('distanciaMin', 'Distancia mínima', 0.2, 1, 0.02, (v) => `${v.toFixed(2)} m`);
+  desliz('distanciaMax', 'Distancia máxima', 1, 4, 0.05, (v) => `${v.toFixed(2)} m`);
+
+  seccion('Movimiento');
+  desliz('velocidadHojas', 'Velocidad', 0.2, 2.5, 0.02);
+  desliz('viento', 'Viento', 0, 2.5, 0.02);
+  desliz('torsion', 'Torsión', 0, 2, 0.02);
+  desliz('paralaje', 'Paralaje', 0, 2, 0.02);
+  desliz('reaccionPuntero', 'Reacción al puntero', 0, 2, 0.02);
+  desliz('desenfoque', 'Arrastre por velocidad', 0, 2, 0.02);
+
+  seccion('Materia de la hoja');
+  desliz('desenfoqueDistancia', 'Desenfoque por distancia', 0, 2.2, 0.02);
+  desliz('transmision', 'Transparencia a contraluz', 0, 2.2, 0.02);
+  desliz('borde', 'Borde iluminado', 0, 2, 0.02);
+  desliz('saturacion', 'Saturación', 0, 1.4, 0.02);
+  desliz('opacidadHojas', 'Opacidad máxima', 0.2, 1, 0.02);
+
+  seccion('Profundidad y recorrido');
   desliz('distanciaCamara', 'Distancia de cámara', 0.6, 1.6, 0.02);
   desliz('movimientoCamara', 'Movimiento de cámara', 0, 2, 0.05);
 
@@ -163,11 +191,43 @@ export function montarPanel(bosque) {
 
   desliz('niebla', 'Niebla', 0, 2.5, 0.02);
   desliz('particulas', 'Partículas', 0, 2, 0.05);
-  desliz('brisa', 'Brisa', 0, 2.5, 0.05);
+  desliz('brisa', 'Brisa del bosque', 0, 2.5, 0.05);
+
+  /* ── Configuraciones comparables ───────────────────────────────────
+     Sirven para ver de un vistazo qué cambia cada familia de valores. La
+     pública es UNA sola —«Natural»—; las otras tres están para comparar. */
+  seccion('Configuraciones');
+  const conf = document.createElement('div');
+  conf.className = 'pnl__config';
+  const NOMBRES = {
+    anterior: 'Anterior', natural: 'Natural',
+    cinematografica: 'Cinemat.', intensa: 'Intensa',
+  };
+  let elegida = 'natural';
+  Object.keys(CONFIGURACIONES).forEach((clave) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = NOMBRES[clave] || clave;
+    b.title = `Configuración «${NOMBRES[clave] || clave}»`;
+    b.addEventListener('click', () => {
+      Object.assign(AJUSTES, CONFIGURACIONES[clave]);
+      elegida = clave;
+      repintar();
+    });
+    conf.appendChild(b);
+  });
+  cuerpo.appendChild(conf);
+  const pintarConfig = () => {
+    [...conf.children].forEach((b, i) => {
+      b.setAttribute('aria-pressed', String(Object.keys(CONFIGURACIONES)[i] === elegida));
+    });
+  };
+  pintarConfig();
 
   const repintar = () => {
     cuerpo.querySelectorAll('.pnl__fila').forEach((f) => f.__pintar?.());
     pintarColores();
+    pintarConfig();
   };
 
   panel.querySelector('[data-copiar]').addEventListener('click', async (e) => {
@@ -184,6 +244,7 @@ export function montarPanel(bosque) {
 
   panel.querySelector('[data-reiniciar]').addEventListener('click', () => {
     Object.assign(AJUSTES, AJUSTES_BASE);
+    elegida = 'natural';
     repintar();
   });
 
@@ -193,7 +254,7 @@ export function montarPanel(bosque) {
 
   document.body.appendChild(panel);
   // El tope de hojas depende del equipo, y el equipo se mide al arrancar
-  filaHojas.querySelector('input').max = String(bosque?.topeHojas ?? 34);
+  filaHojas.querySelector('input').max = String(bosque?.topeHojas ?? 32);
 
   return { panel, repintar, quitar: () => { panel.remove(); estilo.remove(); } };
 }
