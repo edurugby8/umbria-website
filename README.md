@@ -305,6 +305,20 @@ sólo si está el parámetro, así que ni siquiera entra en el paquete principal
   quemar los verdes claros.
 - **Los rayos caen todos hacia el mismo lado que la luz clave.** Un rayo
   apuntando al revés de la sombra delata la escena al instante.
+- **El texto lleva su propio velo, y el velo va DONDE ESTÁ EL TEXTO.** El
+  fondo de cada palabra es el bosque, que se ha ido aclarando fase tras fase:
+  medido sobre el píxel, 79 de 173 textos estaban por debajo del mínimo AA y el
+  peor daba 1,02:1, o sea invisible. La viñeta general no servía porque hace lo
+  contrario de lo que hace falta —deja limpio el centro, que es donde está el
+  texto—, y bajar el brillo del lienzo entero devuelve la página al bosque
+  oscuro del que veníamos. El velo es local y se difumina DENTRO de su
+  recuadro: si el degradado todavía tiene opacidad al llegar al borde, el
+  navegador lo corta en seco y aparece una arista recta.
+- **El velo se sale por los lados, así que hay que recortarlo.** `overflow-x:
+  clip` en `.escena` y en `.pie` —los dos, porque el pie usa también
+  `.interior` y no es una escena—. `clip` y no `hidden`: `hidden` convierte el
+  elemento en contenedor de desplazamiento y se lleva por delante cualquier
+  `position: sticky` y el anclaje del scroll.
 - **El difuso de la vegetación va ENVUELTO, no recortado.** Con
   `max(dot(N,L), 0)`, una hoja cuya normal mire a la cámara y un sol que venga
   de arriba dan cero: la hoja se apaga del todo. Y eso pasa casi siempre en la
@@ -402,8 +416,8 @@ npm run pruebas                      # en otra
 
 Necesita Playwright (`npx playwright install chromium`; si el navegador ya está
 en otra ruta, se pasa en `CHROMIUM`). Son veintisiete comprobaciones repartidas
-en seis escenarios: escritorio, movimiento reducido, móvil, sin WebGL, capas de
-profundidad y vegetación cercana. Cubren que la pantalla de carga se retire, que el contenido se
+en siete escenarios: escritorio, movimiento reducido, móvil, sin WebGL, capas
+de profundidad, vegetación cercana y contraste. Cubren que la pantalla de carga se retire, que el contenido se
 construya, que los revelados dejen el texto a la vista, que los lienzos se
 pinten de verdad, que la linterna siga al puntero, que **la rueda no esté
 secuestrada**, el control de movimiento, «Volver a entrar», que no haya
@@ -411,6 +425,13 @@ desbordamiento horizontal, el respaldo sin WebGL, que las hojas cercanas
 cuelguen de la cámara y viajen de verdad, que **la pose no acumule estado**
 (bajar a un punto y volver a él desde más abajo da la misma cámara) y que el
 panel de ajustes no asome en la visita normal.
+
+Y se mide el **contraste real sobre el píxel**: se apuntan el color de cada
+texto, se vuelve el texto transparente, se captura el fondo puro que queda
+debajo y se compara. El color se lee ANTES de ocultar y la geometría DESPUÉS,
+emparejados por una marca: si se lee todo antes, los revelados mueven los
+elementos entre medias y se mide el trozo de pantalla equivocado; si se lee
+todo después, el color ya es `transparent` y todo da 1,0:1.
 
 Se comprueba además que la hoja sea una malla curvada y no un plano, que lleve
 sombreador propio, que todas compartan un único programa compilado, que el sol

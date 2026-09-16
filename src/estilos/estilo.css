@@ -34,8 +34,11 @@
   --oro-vivo: #f0cd8c;
 
   --texto: var(--crema);
-  --texto-70: rgba(232, 224, 208, .72);
-  --texto-45: rgba(232, 224, 208, .46);
+  --texto-70: rgba(232, 224, 208, .84);
+  /* Antes .46. Ese valor venía de cuando el bosque era casi negro; con la
+     niebla clara de ahora, un texto al 46 % se queda en 1,1:1 de contraste,
+     que es literalmente invisible. */
+  --texto-45: rgba(232, 224, 208, .7);
   --texto-12: rgba(232, 224, 208, .12);
 
   --sans: 'Inter Tight', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -235,11 +238,44 @@ a { color: inherit; }
   padding: clamp(1rem, 2.4vw, 1.7rem) var(--margen);
   transition: padding .5s var(--curva), background .5s, backdrop-filter .5s;
 }
+
+/* Velo de la cabecera.
+   Los enlaces van sobre el lienzo, y lo que tienen detrás cambia de uno a
+   otro: medido en la portada, «De noche» caía sobre un tronco (10,22,15) y
+   «Galería» sobre la niebla (167,164,150). Con un degradado que se apagaba
+   dentro de la propia barra, el segundo se quedaba en 1,5:1.
+
+   Se resuelve dándole RECORRIDO: el velo se sale por debajo de la cabecera y
+   se apaga ahí, de modo que a la altura del texto sigue entero. Sigue siendo
+   un degradado —la cabecera no se convierte en una barra opaca— pero debajo
+   de las letras hay fondo de sobra. */
+.nav::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 -3.5rem 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(5, 10, 7, .9) 0%,
+    rgba(5, 10, 7, .84) 44%,
+    rgba(5, 10, 7, .5) 72%,
+    transparent 100%
+  );
+}
 .nav[data-compacta] {
   padding-block: .8rem;
-  background: linear-gradient(180deg, rgba(7, 11, 9, .82), rgba(7, 11, 9, 0));
   backdrop-filter: blur(14px) saturate(120%);
   -webkit-backdrop-filter: blur(14px) saturate(120%);
+}
+.nav[data-compacta]::before {
+  background: linear-gradient(
+    180deg,
+    rgba(7, 11, 9, .95) 0%,
+    rgba(7, 11, 9, .9) 52%,
+    rgba(7, 11, 9, .55) 78%,
+    transparent 100%
+  );
 }
 
 .nav__marca {
@@ -282,9 +318,11 @@ a { color: inherit; }
   display: inline-flex; align-items: center; gap: .6rem;
   padding: .55rem .95rem; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--texto-12);
-  background: rgba(15, 26, 20, .6);
+  /* Flota sobre el lienzo sin ningún velo detrás: el fondo se lo tiene que
+     poner él entero. */
+  background: rgba(8, 15, 11, .82);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  color: var(--texto-70); font: inherit;
+  color: var(--texto); font: inherit;
   font-size: .68rem; letter-spacing: .16em; text-transform: uppercase;
   transition: color .3s, border-color .3s, background .3s;
 }
@@ -301,14 +339,90 @@ a { color: inherit; }
 
 .contenido { position: relative; z-index: 3; }
 .escena { position: relative; padding-inline: var(--margen); }
+
+/* El velo de legibilidad se sale por los lados a propósito —necesita margen
+   para desvanecerse sin dejar una arista—, y eso ensancha el documento: en un
+   móvil de 390 px el desplazamiento horizontal llegaba a 498 px. Se recorta en
+   quien lo aloja.
+
+   Van los DOS: el pie de página usa también `.interior` y no es una `.escena`,
+   así que se quedaba fuera del recorte. Salían exactamente los 108 px que
+   sobraban (20 de margen menos 128 del velo).
+
+   `clip`, no `hidden`: `hidden` convierte el elemento en contenedor de
+   desplazamiento, y eso rompe cualquier `position: sticky` de dentro y se
+   lleva por delante el anclaje del scroll. `clip` sólo recorta. */
+.escena,
+.pie { overflow-x: clip; }
 .interior { max-width: var(--contenedor); margin-inline: auto; width: 100%; }
 .interior--estrecho { max-width: 780px; }
+
+/* --------------------------------------------------------------------------
+   Velo de legibilidad
+   --------------------------------------------------------------------------
+
+   El texto vive sobre el lienzo del bosque, y el bosque se ha ido aclarando
+   fase tras fase: la banda de niebla del horizonte es ya casi blanca. Sobre
+   ella, un texto crema se queda en 1,1:1 de contraste. No es que se lea mal:
+   es que no se lee.
+
+   La viñeta general no resolvía nada porque hace justo lo contrario de lo que
+   hace falta —deja LIMPIO el centro, que es donde está el texto, y oscurece
+   los bordes, que es donde no hay nada—. Y bajar el brillo de todo el lienzo
+   tampoco: eso devuelve la página al bosque oscuro del que veníamos.
+
+   Así que el velo va SÓLO donde está el texto, difuminado hasta desaparecer
+   en el borde para que no se lea como una caja. El bosque sigue claro
+   alrededor; debajo de las letras, no. */
+.umbral__caja,
+.interior { position: relative; }
+
+.umbral__caja::before,
+.interior::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  /* El recuadro va MUY holgado y el degradado se apaga DENTRO de él.
+     Es la diferencia entre un velo y una caja: si el degradado todavía tiene
+     opacidad cuando llega al borde del recuadro, el navegador lo corta en
+     seco y aparece una arista recta. Se vio clarísimo en la portada —una
+     línea horizontal arriba y otra abajo—. Con los radios al 50 % el
+     desvanecido termina justo en el canto, y el margen extra es lo que le da
+     sitio para hacerlo sin dejar de cubrir el texto. */
+  inset: -5rem -8rem -4.5rem;
+  background: radial-gradient(
+    ellipse 50% 52% at 50% 43%,
+    rgba(5, 10, 7, .84),
+    rgba(5, 10, 7, .74) 44%,
+    rgba(5, 10, 7, .4) 72%,
+    rgba(5, 10, 7, .12) 89%,
+    transparent 100%
+  );
+}
+
+/* El contenido, por encima de su propio velo */
+.umbral__caja > *,
+.interior > * { position: relative; z-index: 1; }
 
 .etiqueta {
   display: flex; align-items: center; gap: .9rem;
   margin: 0 0 1.4rem;
   font-size: .68rem; letter-spacing: .3em; text-transform: uppercase;
-  color: var(--texto-45);
+  /* A plena luz, no atenuada: va en lo alto del bloque —justo donde el velo
+     ya se está apagando— y además es lo más pequeño y espaciado de toda la
+     página, que es la combinación que peor aguanta un fondo vivo.
+
+     Y encima lleva su propio halo. Es el ÚNICO texto de la página que lo
+     necesita: en las secciones altas queda tan arriba del bloque que el velo
+     ya casi no llega, y subir el velo para ella oscurecería de más todo lo
+     demás. Un halo de diez píxeles en un texto de once resuelve justo eso y
+     no se nota como sombra. */
+  color: var(--luz);
+  /* El halo va generoso porque el fondo es un bosque EN MOVIMIENTO: la medida
+     cambia de un fotograma a otro, así que no vale quedarse justo en el 4,5.
+     Hay que dejar margen o la etiqueta pasa la prueba y falla en pantalla. */
+  text-shadow: 0 0 14px rgba(4, 9, 6, .96), 0 0 5px rgba(4, 9, 6, .92), 0 1px 3px rgba(4, 9, 6, .85);
 }
 .etiqueta::before {
   content: ''; width: clamp(24px, 4vw, 48px); height: 1px; flex: none;
@@ -369,7 +483,9 @@ a { color: inherit; }
   display: inline-flex; align-items: center; gap: .6rem;
   padding: .85rem 1.5rem; border-radius: 999px;
   border: 1px solid var(--texto-12);
-  background: rgba(232, 224, 208, .04);
+  /* Antes .04 sobre el crema: prácticamente nada. Un botón de contorno sobre
+     el claro del final se quedaba en 3,3:1. Ahora el fondo es oscuro y suyo. */
+  background: rgba(7, 13, 10, .48);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   color: var(--texto); text-decoration: none; cursor: pointer;
   font: inherit; font-size: .74rem; letter-spacing: .18em; text-transform: uppercase;
@@ -386,7 +502,7 @@ a { color: inherit; }
   background: var(--oro); border-color: var(--oro); color: #14100a; font-weight: 600;
 }
 .boton--solido:hover { background: var(--oro-vivo); border-color: var(--oro-vivo); color: #14100a; }
-.boton--fino { padding: .6rem 1.1rem; font-size: .68rem; }
+.boton--fino { padding: .6rem 1.1rem; font-size: .68rem; color: var(--luz); }
 .punto { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
 
 .acciones { display: flex; flex-wrap: wrap; gap: .8rem; }
@@ -410,9 +526,21 @@ a { color: inherit; }
   color: var(--texto-70);
 }
 .umbral__pie {
+  position: relative;
   max-width: var(--contenedor); margin: clamp(2.5rem, 8vh, 5rem) auto 0; width: 100%;
   display: flex; align-items: flex-end; justify-content: space-between; gap: 2rem;
 }
+/* Este pie va FUERA del bloque principal, así que se queda sin su velo y
+   encima cae sobre el suelo del bosque, que es zona clara. Lleva el suyo. */
+.umbral__pie::before {
+  content: ''; position: absolute; z-index: 0; pointer-events: none;
+  inset: -3.5rem -6rem;
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(5, 10, 7, .68), rgba(5, 10, 7, .5) 45%, rgba(5, 10, 7, .16) 78%, transparent 100%
+  );
+}
+.umbral__pie > * { position: relative; z-index: 1; }
 .desliza {
   display: inline-flex; align-items: center; gap: .8rem;
   font-size: .68rem; letter-spacing: .28em; text-transform: uppercase;
@@ -519,7 +647,7 @@ a { color: inherit; }
 .tarjeta:hover .tarjeta__lienzo { transform: scale(1.12); opacity: .68; }
 .tarjeta__velo {
   position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(7, 11, 9, .12) 0%, rgba(7, 11, 9, .42) 42%, rgba(7, 11, 9, .88) 78%, rgba(7, 11, 9, .97) 100%);
+  background: linear-gradient(180deg, rgba(7, 11, 9, .12) 0%, rgba(7, 11, 9, .5) 40%, rgba(7, 11, 9, .82) 62%, rgba(7, 11, 9, .94) 80%, rgba(7, 11, 9, .98) 100%);
 }
 /* Ojo con el orden: esta regla tiene la MISMA especificidad que la del lienzo
    y la del velo, y al ir después les ganaba el `position`, así que el fondo se
@@ -527,7 +655,8 @@ a { color: inherit; }
 .tarjeta > *:not(.tarjeta__lienzo):not(.tarjeta__velo) { position: relative; }
 .tarjeta__num {
   font-family: var(--serif); font-size: .9rem; letter-spacing: .2em;
-  color: var(--oro);
+  /* El oro normal se queda corto sobre el lienzo de la tarjeta */
+  color: var(--oro-vivo);
 }
 .tarjeta__cuerpo { margin-top: auto; }
 .tarjeta__nombre {
@@ -541,7 +670,7 @@ a { color: inherit; }
   display: flex; flex-wrap: wrap; gap: .5rem .9rem;
   padding-top: .9rem; border-top: 1px solid var(--texto-12);
   font-size: .68rem; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--texto-45);
+  color: var(--texto-70);
 }
 
 /* --------------------------------------------------------------------------

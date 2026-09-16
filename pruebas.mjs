@@ -436,6 +436,147 @@ console.log('\nVEGETACIÓN CERCANA');
   await p.close();
 }
 
+/* ── Contraste real del texto sobre el bosque ────────────────────── */
+console.log('\nCONTRASTE');
+{
+  /* Esto no se puede comprobar leyendo el CSS: el fondo de cada palabra es el
+     BOSQUE, que cambia con el recorrido y con el fotograma. Así que se mide
+     sobre el píxel.
+
+     El método: dos estados del mismo fotograma. Primero se apuntan las cajas y
+     los colores de cada texto; después se vuelve el texto transparente y se
+     captura, lo que da el fondo puro debajo de cada caja. La captura se
+     devuelve a la página, se dibuja en un lienzo y se leen los píxeles.
+
+     Se compara contra el fondo del percentil 90, no contra la media: basta una
+     zona clara detrás de una palabra para que esa palabra se pierda, aunque el
+     resto de la caja esté oscuro. */
+  const SEL = 'h1,h2,p,a,button,span.linea__int,li,blockquote,.etiqueta,.nota,.datos__num,.datos__pie';
+  const medirContraste = async (p, vp, fraccion) => {
+    const alto = await p.evaluate(() => document.body.scrollHeight);
+    await p.evaluate((y) => {
+      document.documentElement.style.scrollBehavior = 'auto';
+      scrollTo(0, y);
+    }, Math.round((alto - vp.height) * fraccion));
+    await p.evaluate(() => { window.__d = window.__bosqueUM?.fotogramas ?? 0; });
+    await p.waitForFunction(() => !window.__bosqueUM || window.__bosqueUM.fotogramas - window.__d >= 4,
+      null, { timeout: 60000, polling: 150 }).catch(() => {});
+
+    /* El COLOR se lee antes de ocultar y la GEOMETRÍA después, y se emparejan
+       por una marca puesta en cada elemento.
+
+       Las dos mitades importan. Si se lee todo antes, entre la lectura y la
+       captura pasan segundos —a un fotograma por segundo— y los revelados de
+       GSAP mueven los elementos: se mide el trozo de pantalla equivocado, y
+       salen cosas como 2,65:1 en una fila que sobre el negro de su tarjeta da
+       once. Y si se lee todo después, el color ya es `transparent` y todo da
+       1,0:1. El color no depende del momento; la posición, sí. */
+    const estilos = await p.evaluate((sel) => {
+      const fuera = [];
+      let k = 0;
+      for (const el of document.querySelectorAll(sel)) {
+        if (el.querySelector(sel)) continue;
+        if (!(el.textContent || '').trim()) continue;
+        const cs = getComputedStyle(el);
+        if (cs.visibility === 'hidden' || +cs.opacity < 0.05) continue;
+        el.dataset.k = String(k);
+        const tam = parseFloat(cs.fontSize);
+        const grande = tam >= 24 || (tam >= 18.66 && parseInt(cs.fontWeight, 10) >= 700);
+        fuera.push({ k: k++, c: cs.color, min: grande ? 3 : 4.5,
+          t: (el.textContent || '').trim().slice(0, 28) });
+      }
+      return fuera;
+    }, SEL);
+
+    // Fondo puro: el texto se vuelve transparente y se espera a que PINTE
+    await p.evaluate((sel) => {
+      window.__ocultos = [];
+      for (const el of document.querySelectorAll(sel)) {
+        window.__ocultos.push([el, el.style.color, el.style.textShadow]);
+        el.style.setProperty('color', 'transparent', 'important');
+        el.style.setProperty('text-shadow', 'none', 'important');
+      }
+    }, SEL);
+    await p.evaluate(() => { window.__d = window.__bosqueUM?.fotogramas ?? 0; });
+    await p.waitForFunction(() => !window.__bosqueUM || window.__bosqueUM.fotogramas - window.__d >= 3,
+      null, { timeout: 60000, polling: 150 }).catch(() => {});
+
+    // Geometría en el MISMO instante que la captura
+    const cajas = await p.evaluate((estilos) => {
+      const fuera = [];
+      for (const e of estilos) {
+        const el = document.querySelector(`[data-k="${e.k}"]`);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 8 || r.height < 6 || r.top < 0 || r.bottom > innerHeight) continue;
+        fuera.push({ ...e, x: r.x, y: r.y, w: r.width, h: r.height });
+      }
+      return fuera;
+    }, estilos);
+
+    const png = (await p.screenshot()).toString('base64');
+    await p.evaluate(() => { for (const [el, c, so] of window.__ocultos) { el.style.color = c; el.style.textShadow = so; } });
+
+    return p.evaluate(async ({ png, cajas, dpr }) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${png}`;
+      await img.decode();
+      const lz = document.createElement('canvas');
+      lz.width = img.width; lz.height = img.height;
+      lz.getContext('2d').drawImage(img, 0, 0);
+      const ctx = lz.getContext('2d');
+      const canal = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+      const lum = (r, g, b) => 0.2126 * canal(r) + 0.7152 * canal(g) + 0.0722 * canal(b);
+      const peores = [];
+      for (const c of cajas) {
+        const x = Math.max(0, Math.round(c.x * dpr));
+        const y = Math.max(0, Math.round(c.y * dpr));
+        const w = Math.min(lz.width - x, Math.round(c.w * dpr));
+        const h = Math.min(lz.height - y, Math.round(c.h * dpr));
+        if (w < 1 || h < 1) continue;
+        const d = ctx.getImageData(x, y, w, h).data;
+        const L = [];
+        let sr = 0, sg = 0, sb = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          L.push(lum(d[i], d[i + 1], d[i + 2]));
+          sr += d[i]; sg += d[i + 1]; sb += d[i + 2]; n++;
+        }
+        L.sort((a, b) => a - b);
+        const fondo = L[Math.floor(L.length * 0.9)];
+        const m = c.c.match(/[\d.]+/g).map(Number);
+        const a = m.length > 3 ? m[3] : 1;
+        const rgb = [0, 1, 2].map((i) => a * m[i] + (1 - a) * [sr / n, sg / n, sb / n][i]);
+        const lt = lum(rgb[0], rgb[1], rgb[2]);
+        const hi = Math.max(lt, fondo), lo = Math.min(lt, fondo);
+        peores.push({ r: (hi + 0.05) / (lo + 0.05), min: c.min, t: c.t });
+      }
+      return peores;
+    }, { png, cajas, dpr: await p.evaluate(() => devicePixelRatio) });
+  };
+
+  for (const [nombre, vp, fracciones] of [
+    ['escritorio', { width: 1440, height: 900 }, [0, 0.12, 0.97]],
+    ['móvil', { width: 390, height: 844 }, [0, 0.5]],
+  ]) {
+    const p = await navegador.newPage({ viewport: vp });
+    await p.addInitScript(() => { window.__debugUM = true; });
+    await p.goto(URL, { waitUntil: 'networkidle' });
+    await p.waitForTimeout(4200);
+    let medidos = 0;
+    const malos = [];
+    for (const f of fracciones) {
+      for (const r of await medirContraste(p, vp, f)) {
+        medidos++;
+        if (r.r < r.min) malos.push(`${r.t.slice(0, 22)} ${r.r.toFixed(2)}:1<${r.min}`);
+      }
+    }
+    malos.length === 0
+      ? ok(`${nombre}: los ${medidos} textos llegan al mínimo AA sobre el bosque`)
+      : fallo('contraste', `${nombre}: ${malos.slice(0, 4).join(' · ')}`);
+    await p.close();
+  }
+}
+
 await navegador.close();
 console.log(fallos.length ? `\nFALLOS (${fallos.length}): ${[...new Set(fallos)].join(', ')}` : '\nTodo correcto.');
 process.exit(fallos.length ? 1 : 0);
