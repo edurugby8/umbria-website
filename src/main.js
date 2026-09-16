@@ -126,6 +126,15 @@ if (!reducido) {
   // En móvil, el giroscopio no: consume permiso y marea. Basta con el scroll.
 }
 
+/* ── Panel de ajustes (sólo para afinar, no va en la versión pública) ──
+   Se carga con `import()` dinámico y sólo si la dirección lleva `?ajustes`,
+   así que no pesa un byte en la visita normal. */
+if (new URLSearchParams(location.search).has('ajustes')) {
+  import('./ui/panel.js')
+    .then((m) => m.montarPanel(bosque))
+    .catch((e) => console.warn('Panel de ajustes no disponible:', e));
+}
+
 /* ── Cabecera compacta ─────────────────────────────────────────────── */
 
 const nav = document.getElementById('nav');

@@ -100,7 +100,9 @@ export function texturaArbol(semilla = 1) {
 
 /** Mata de helecho para el primer plano del sotobosque. */
 export function texturaHelecho(semilla = 1) {
-  return sinMipmaps(lienzo(256, 256, (ctx, w, h) => {
+  // 512, no 256: estos recortes llegan a pasar a metro y medio del objetivo y
+  // a esa distancia un alfa de 256 px se ve como una escalera.
+  return sinMipmaps(lienzo(512, 512, (ctx, w, h) => {
     const azar = azarCon(semilla * 5531);
     ctx.fillStyle = '#ffffff';
     const frondes = 7 + Math.floor(azar() * 5);
@@ -238,11 +240,16 @@ export function texturaRayo() {
 export function texturaCielo() {
   const t = lienzo(4, 512, (ctx, w, h) => {
     const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#050a08');
-    g.addColorStop(0.34, '#0a150f');
-    g.addColorStop(0.62, '#0f2018');   // banda del horizonte
-    g.addColorStop(0.78, '#0b1a14');
-    g.addColorStop(1, '#060b08');
+    /* Fase 3 · El cielo era casi negro y arrastraba a toda la escena con él:
+       con la niebla casada a un horizonte oscuro, lo lejano no se fundía, se
+       tragaba. Ahora la banda del horizonte es una neblina CLARA —la de un
+       hayedo a media mañana— y los troncos se recortan contra ella. Iluminar
+       el fondo es lo que deja subir los verdes sin perder la silueta. */
+    g.addColorStop(0, '#12281c');
+    g.addColorStop(0.30, '#21462f');
+    g.addColorStop(0.60, '#456f52');   // banda del horizonte: la niebla con sol
+    g.addColorStop(0.74, '#2e5138');
+    g.addColorStop(1, '#16281c');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
   });
@@ -436,5 +443,295 @@ export function texturaSuelo() {
     }
   });
   t.colorSpace = THREE.SRGBColorSpace;
-  return repetible(t, 40, 40);
+  // 40 repeticiones sobre 400 m son manchas de 10 m: de cerca, una moqueta.
+  // A 90 la hojarasca vuelve a tener tamaño de hoja.
+  return repetible(t, 90, 90);
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   Hojas de primer plano
+   ────────────────────────────────────────────────────────────────────
+
+   Las que pasan a un palmo del objetivo no pueden ser la misma silueta de
+   64 px que usan las motas: ahí se ve el canto, la nervadura y hasta la luz
+   que las atraviesa. Se dibujan grandes (512 px), con el borde irregular y
+   con sombreado interno, y de cada forma se guardan tres copias con distinto
+   difuminado. La copia difuminada es la que llevan las que pasan MÁS cerca:
+   así el desenfoque de profundidad sale gratis, sin tocar el sombreador ni
+   pasar por un paso de posprocesado. */
+
+/** Recorta el borde para que no quede el óvalo perfecto de un plástico. */
+function bordeIrregular(ctx, s, azar, vueltas = 26) {
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < vueltas; i++) {
+    const a = azar() * Math.PI * 2;
+    const r = s * (0.3 + azar() * 0.2);
+    ctx.beginPath();
+    ctx.arc(s / 2 + Math.cos(a) * r, s / 2 + Math.sin(a) * r * 1.15, s * (0.01 + azar() * 0.035), 0, 6.283);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/** Nervadura: se resta del alfa, así se lee como un surco y no como pintura. */
+function nervadura(ctx, s, ramas, ancho) {
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.strokeStyle = 'rgba(0,0,0,.42)';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = s * ancho;
+  ctx.beginPath();
+  ctx.moveTo(s / 2, s * 0.06);
+  ctx.lineTo(s / 2, s * 0.95);
+  ctx.stroke();
+  ctx.lineWidth = s * ancho * 0.5;
+  for (let i = 0; i < ramas; i++) {
+    const t = 0.16 + (i / ramas) * 0.7;
+    const y = s * t;
+    const alcance = s * 0.3 * Math.sin(t * Math.PI) * 1.5;
+    ctx.beginPath();
+    ctx.moveTo(s / 2, y);
+    ctx.lineTo(s / 2 + alcance, y + s * 0.09);
+    ctx.moveTo(s / 2, y);
+    ctx.lineTo(s / 2 - alcance, y + s * 0.09);
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/**
+ * Sombreado interno. El material multiplica el mapa por el color, así que
+ * pintar grises aquí es pintar sombra: un lado en penumbra, el otro con la
+ * luz pasando a través. Es lo que separa una hoja de una calcomanía.
+ */
+function cuerpoDeHoja(ctx, s, azar) {
+  ctx.globalCompositeOperation = 'source-atop';
+  const g = ctx.createLinearGradient(s * 0.1, 0, s * 0.9, s);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.42, 'rgba(90,110,80,.30)');
+  g.addColorStop(1, 'rgba(24,36,26,.52)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  // Zona translúcida: por donde el sol atraviesa el limbo
+  const luz = ctx.createRadialGradient(s * 0.38, s * 0.34, 0, s * 0.38, s * 0.34, s * 0.5);
+  luz.addColorStop(0, 'rgba(255,255,255,.55)');
+  luz.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = luz;
+  ctx.fillRect(0, 0, s, s);
+  // Manchas: ninguna hoja es de un solo tono
+  for (let i = 0; i < 16; i++) {
+    const r = s * (0.03 + azar() * 0.09);
+    ctx.fillStyle = `rgba(${azar() > 0.5 ? '210,215,170' : '60,78,54'},${0.05 + azar() * 0.12})`;
+    ctx.beginPath();
+    ctx.arc(azar() * s, azar() * s, r, 0, 6.283);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+const FORMAS = 4;
+
+/**
+ * Una hoja de primer plano.
+ *
+ * @param {number} forma  0 haya · 1 roble lobulado · 2 ramita compuesta · 3 fronda
+ * @param {number} semilla  para que dos hojas de la misma forma no sean gemelas
+ * @param {number} difuminado  píxeles de desenfoque (0 = nítida)
+ */
+export function texturaHojaCerca(forma = 0, semilla = 1, difuminado = 0) {
+  const S = 512;
+  const dibujo = document.createElement('canvas');
+  dibujo.width = S;
+  dibujo.height = S;
+  const ctx = dibujo.getContext('2d');
+  const azar = azarCon(semilla * 2357 + forma * 91 + 7);
+  if (!ctx) return sinMipmaps(lienzo(4, 4, () => {}));
+
+  ctx.fillStyle = '#ffffff';
+  const c = S / 2;
+
+  if (forma === 0) {
+    // Haya: óvalo con punta y el borde ondulado
+    ctx.beginPath();
+    ctx.moveTo(c, S * 0.03);
+    ctx.bezierCurveTo(S * 0.98, S * 0.28, S * 0.86, S * 0.80, c, S * 0.98);
+    ctx.bezierCurveTo(S * 0.14, S * 0.80, S * 0.02, S * 0.28, c, S * 0.03);
+    ctx.fill();
+    nervadura(ctx, S, 7, 0.018);
+  } else if (forma === 1) {
+    // Roble: lóbulos alternos alrededor del nervio
+    ctx.beginPath();
+    ctx.moveTo(c, S * 0.04);
+    for (let lado = 1; lado >= -1; lado -= 2) {
+      const pasos = 6;
+      for (let i = 0; i < pasos; i++) {
+        const t = lado > 0 ? i / pasos : 1 - i / pasos;
+        const y = S * (0.06 + t * 0.88);
+        const w = S * (0.16 + Math.sin(t * Math.PI) * 0.3) * (0.72 + azar() * 0.5);
+        ctx.quadraticCurveTo(c + lado * w * 1.25, y - S * 0.045, c + lado * w * 0.55, y);
+        ctx.quadraticCurveTo(c + lado * w * 0.2, y + S * 0.035, c + lado * w * 0.62, y + S * 0.06);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+    nervadura(ctx, S, 6, 0.016);
+  } else if (forma === 2) {
+    // Ramita: un tallo con cinco folíolos. Rompe el «todo son hojas sueltas»
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = S * 0.028;
+    ctx.beginPath();
+    ctx.moveTo(c * 0.94, S * 0.99);
+    ctx.quadraticCurveTo(c, S * 0.5, c * 1.06, S * 0.05);
+    ctx.stroke();
+    for (let i = 0; i < 5; i++) {
+      const t = 0.12 + i * 0.19;
+      const lado = i % 2 ? 1 : -1;
+      const y = S * (1 - t);
+      const largo = S * (0.17 + azar() * 0.13);
+      const ang = lado * (0.7 + azar() * 0.5);
+      ctx.save();
+      ctx.translate(c + lado * S * 0.02, y);
+      ctx.rotate(ang);
+      ctx.beginPath();
+      ctx.ellipse(largo * 0.55, 0, largo * 0.55, largo * 0.25, 0, 0, 6.283);
+      ctx.fill();
+      ctx.restore();
+    }
+  } else {
+    // Fronda: pinnas cada vez más cortas hacia la punta
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = S * 0.022;
+    ctx.beginPath();
+    ctx.moveTo(c, S * 0.99);
+    ctx.quadraticCurveTo(c * 1.18, S * 0.45, c * 0.86, S * 0.04);
+    ctx.stroke();
+    for (let i = 0; i < 13; i++) {
+      const t = i / 13;
+      const y = S * (0.95 - t * 0.88);
+      const x = c + Math.sin(t * 1.6) * S * 0.09;
+      const largo = S * 0.26 * (1 - t * 0.78) * (0.8 + azar() * 0.45);
+      for (const lado of [-1, 1]) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(lado * (0.95 + azar() * 0.25));
+        ctx.beginPath();
+        ctx.ellipse(largo * 0.5, 0, largo * 0.5, largo * 0.14, 0, 0, 6.283);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  bordeIrregular(ctx, S, azar, forma < 2 ? 30 : 14);
+  cuerpoDeHoja(ctx, S, azar);
+
+  // El desenfoque va en un segundo lienzo: `filter` se aplica al DIBUJAR, no
+  // a lo ya dibujado, así que hay que volver a pintar el resultado.
+  if (difuminado > 0) {
+    const salida = document.createElement('canvas');
+    salida.width = S;
+    salida.height = S;
+    const sx = salida.getContext('2d');
+    if (sx) {
+      sx.filter = `blur(${difuminado}px)`;
+      sx.drawImage(dibujo, 0, 0);
+    }
+    const t = new THREE.CanvasTexture(salida);
+    t.anisotropy = 4;
+    return sinMipmaps(t);
+  }
+
+  const t = new THREE.CanvasTexture(dibujo);
+  t.anisotropy = 8;
+  return sinMipmaps(t);
+}
+
+/** Las cuatro formas × tres grados de desenfoque, con sus variantes. */
+export function juegoDeHojas() {
+  const juego = [];
+  for (let f = 0; f < FORMAS; f++) {
+    for (let v = 0; v < 2; v++) {
+      juego.push({
+        forma: f,
+        nitida: texturaHojaCerca(f, f * 10 + v + 1, 0),
+        media: texturaHojaCerca(f, f * 10 + v + 1, 5),
+        suave: texturaHojaCerca(f, f * 10 + v + 1, 13),
+      });
+    }
+  }
+  return juego;
+}
+
+/**
+ * La línea de árboles del fondo.
+ *
+ * Es la quinta capa: lo que se ve MÁS ALLÁ del corredor. Sin ella, donde
+ * acaba el arbolado instanciado empieza el cielo liso y la profundidad se
+ * corta en seco. Son tres filas de copas superpuestas, cada una más pálida,
+ * fundidas con el color del horizonte.
+ */
+export function texturaLejania() {
+  const dibujo = document.createElement('canvas');
+  dibujo.width = 1024;
+  dibujo.height = 256;
+  const ctx = dibujo.getContext('2d');
+  if (!ctx) return lienzo(4, 4, () => {});
+  const azar = azarCon(4211);
+  const w = 1024;
+  const h = 256;
+
+  /* Copas REDONDEADAS, no triángulos.
+     La primera versión dibujaba conos y se leían exactamente como lo que
+     eran: cartón recortado apoyado al fondo. Un hayedo visto de lejos no
+     tiene puntas, tiene una línea de bultos. Tres filas, cada una más
+     pálida que la de delante, y al final un difuminado que las manda al
+     aire: a 150 m no hay canto que valga. */
+  const filas = [
+    { base: h * 0.97, alto: h * 0.40, color: 'rgba(132,166,140,.34)', grano: 46 },
+    { base: h * 1.00, alto: h * 0.58, color: 'rgba(92,126,100,.42)', grano: 62 },
+    { base: h * 1.03, alto: h * 0.76, color: 'rgba(58,88,66,.5)', grano: 84 },
+  ];
+  for (const fila of filas) {
+    ctx.fillStyle = fila.color;
+    ctx.beginPath();
+    ctx.moveTo(-60, h);
+    let x = -60;
+    while (x < w + 60) {
+      const ancho = fila.grano * (0.55 + azar() * 0.95);
+      const alto = fila.alto * (0.4 + azar() * 0.8);
+      const cx = x + ancho / 2;
+      const cima = fila.base - alto;
+      // Una copa: sube redonda, se queda plana arriba y vuelve a bajar
+      ctx.lineTo(x, fila.base);
+      ctx.bezierCurveTo(x + ancho * 0.1, cima + alto * 0.25, cx - ancho * 0.3, cima, cx, cima);
+      ctx.bezierCurveTo(cx + ancho * 0.3, cima, x + ancho * 0.9, cima + alto * 0.25, x + ancho, fila.base);
+      x += ancho * (0.62 + azar() * 0.3);
+    }
+    ctx.lineTo(w + 60, h);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Se desvanece hacia arriba para fundirse con el cielo
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, 'rgba(0,0,0,1)');
+  g.addColorStop(0.5, 'rgba(0,0,0,.3)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  // Y se difumina entero: es la capa MÁS lejana, no puede tener filo
+  const salida = document.createElement('canvas');
+  salida.width = w;
+  salida.height = h;
+  const sx = salida.getContext('2d');
+  if (sx) {
+    sx.filter = 'blur(5px)';
+    sx.drawImage(dibujo, 0, 0);
+  }
+  const t = new THREE.CanvasTexture(salida);
+  t.anisotropy = 4;
+  return t;
 }

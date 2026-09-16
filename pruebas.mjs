@@ -198,6 +198,101 @@ console.log('\nSIN WEBGL');
   await p.close();
 }
 
+/* ── Fase 3: las capas de profundidad ────────────────────────────── */
+console.log('\nCAPAS DE PROFUNDIDAD');
+{
+  const p = await navegador.newPage({ viewport: { width: 1440, height: 900 } });
+  p.on('pageerror', (e) => fallo('error de página (capas)', e.message.split('\n')[0]));
+  await p.addInitScript(() => { window.__debugUM = true; });
+  await p.goto(URL, { waitUntil: 'networkidle' });
+  await p.waitForTimeout(4200);
+
+  const e = await p.evaluate(() => {
+    const b = window.__bosqueUM;
+    const grupo = b.hojasCerca.objeto;
+    return {
+      cuelgaDeLaCamara: grupo.parent === b.camara,
+      hojasVivas: grupo.children.filter((c) => c.visible).length,
+      // Ninguna hoja puede quedarse quieta delante del objetivo
+      posiciones: grupo.children.filter((c) => c.visible).map((c) => +c.position.x.toFixed(3)),
+      freno: b.hojasCerca ? 0 : 0,
+    };
+  });
+  e.cuelgaDeLaCamara ? ok('las hojas cercanas cuelgan de la cámara') : fallo('hojas', 'no van con la cámara');
+  e.hojasVivas > 0 ? ok(`hojas cercanas en el encuadre (${e.hojasVivas})`) : fallo('hojas', 'ninguna visible');
+
+  // Otra vez: se esperan FOTOGRAMAS, no milisegundos. Con un fotograma por
+  // segundo, esperar «un segundo y medio» puede no llegar a pintar ninguno y
+  // las hojas parecerían quietas estando perfectamente vivas.
+  await p.evaluate(() => { window.__desde = window.__bosqueUM.fotogramas; });
+  await p.waitForFunction(() => window.__bosqueUM.fotogramas - window.__desde >= 8,
+    null, { timeout: 60000, polling: 200 });
+  const despues = await p.evaluate(() =>
+    window.__bosqueUM.hojasCerca.objeto.children.filter((c) => c.visible).map((c) => +c.position.x.toFixed(3)));
+  const movidas = despues.filter((x, i) => x !== e.posiciones[i]).length;
+  movidas > 0 ? ok(`las hojas viajan por el encuadre (${movidas} de ${despues.length})`) : fallo('hojas', 'quietas');
+
+  /* La pose sigue siendo función pura del desplazamiento: bajar hasta un
+     punto y volver a él desde más abajo tiene que dar EXACTAMENTE la misma
+     cámara. Es la propiedad que sostiene todo el recorrido.
+
+     Se mide con el desplazamiento instantáneo (`scroll-behavior: auto`) y
+     esperando a que la cámara se asiente de verdad, no a un temporizador:
+     bajo renderizado por software un fotograma puede durar casi un segundo y
+     cualquier plazo fijo se queda corto. */
+  const pose = async (y) => {
+    await p.evaluate((v) => {
+      document.documentElement.style.scrollBehavior = 'auto';
+      window.scrollTo(0, v);
+    }, y);
+    await p.waitForFunction((v) => Math.abs(window.scrollY - v) < 2, y, { timeout: 15000 });
+    // Asentada = la cámara no se mueve A LO LARGO DE VARIOS FOTOGRAMAS
+    // PINTADOS. Contar milisegundos no vale: a un fotograma por segundo, dos
+    // sondeos seguidos leen el mismo fotograma y parece que ya está quieta.
+    await p.evaluate(() => { window.__marca = null; });
+    await p.waitForFunction(() => {
+      const b = window.__bosqueUM;
+      const m = window.__marca;
+      if (!m || Math.abs(b.st.camZ - m.camZ) > 0.01) {
+        window.__marca = { camZ: b.st.camZ, fotograma: b.fotogramas };
+        return false;
+      }
+      return b.fotogramas - m.fotograma >= 5;
+    }, null, { timeout: 90000, polling: 200 });
+    return p.evaluate(() => {
+      const s = window.__bosqueUM.st;
+      return `${Math.round(window.scrollY)}→${[s.camZ, s.camY, s.niebla].map((v) => +v.toFixed(1)).join('/')}`;
+    });
+  };
+  const bajando = await pose(3000);
+  await pose(5200);
+  const subiendo = await pose(3000);
+  bajando === subiendo
+    ? ok(`la pose no acumula estado (${bajando} en los dos sentidos)`)
+    : fallo('pose', `${bajando} ≠ ${subiendo}`);
+  await p.close();
+}
+
+/* ── Fase 3: los mandos, sólo bajo petición ──────────────────────── */
+{
+  const p = await navegador.newPage({ viewport: { width: 1440, height: 900 } });
+  p.on('pageerror', (e) => fallo('error de página (panel)', e.message.split('\n')[0]));
+  await p.goto(URL, { waitUntil: 'networkidle' });
+  await p.waitForTimeout(3000);
+  (await p.locator('.pnl').count()) === 0
+    ? ok('el panel de ajustes NO sale en la visita normal')
+    : fallo('panel', 'aparece sin pedirlo');
+  await p.close();
+
+  const q = await navegador.newPage({ viewport: { width: 1440, height: 900 } });
+  q.on('pageerror', (e) => fallo('error de página (panel)', e.message.split('\n')[0]));
+  await q.goto(`${URL}?ajustes`, { waitUntil: 'networkidle' });
+  await q.waitForTimeout(3200);
+  const mandos = await q.locator('.pnl input[type=range]').count();
+  mandos >= 11 ? ok(`el panel sale con ?ajustes (${mandos} mandos)`) : fallo('panel', `${mandos} mandos`);
+  await q.close();
+}
+
 await navegador.close();
 console.log(fallos.length ? `\nFALLOS (${fallos.length}): ${[...new Set(fallos)].join(', ')}` : '\nTodo correcto.');
 process.exit(fallos.length ? 1 : 0);

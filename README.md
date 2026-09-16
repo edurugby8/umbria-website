@@ -145,11 +145,14 @@ src/
   estilos/estilo.css    todo el diseño
   tipos/                las dos tipografías variables
   lib/util.js           interpolación, curvas, medida del equipo
+  bosque/ajustes.js     LOS MANDOS: todos los números que se pueden tocar
   bosque/escena.js      el bosque 3D, la luz y el recorrido de cámara
-  bosque/texturas.js    corteza, follaje, suelo, niebla, rayos: en lienzo
+  bosque/hojas-cerca.js la capa que roza la cara: cuelga de la cámara
+  bosque/texturas.js    corteza, follaje, suelo, niebla, rayos, hojas
   bosque/particulas.js  polen, luciérnagas y hojas, con su sombreador
   arte/paisaje.js       los paisajes de la galería, tarjetas y linterna
   ui/                   cursor, revelados, marquesina, linterna, contenido
+  ui/panel.js           panel de ajustes; sólo se carga con `?ajustes`
 pruebas.mjs             recorrido funcional
 .github/workflows/      publicación en GitHub Pages
 ```
@@ -158,6 +161,59 @@ Las tipografías viven en `src/`, no en `public/`, a propósito: así Vite las
 versiona con un resumen en el nombre y les pone la ruta base sola. En `public/`
 va sólo lo que tiene que conservar su nombre exacto.
 
+
+### Las cinco capas
+
+Lo que da profundidad no es la distancia, es que haya **capas separadas por
+niebla y por luz**, cada una moviéndose a su ritmo:
+
+| # | Capa | Dónde vive | Qué aporta |
+|---|------|-----------|------------|
+| 0 | Hojas cercanas | **colgando de la cámara** | el roce en la cara |
+| 1 | Sotobosque | 6–23 m de la senda | el suelo del bosque |
+| 2 | Fronda media | 12–32 m | espesura: se abre y se cierra al pasar |
+| 3 | Troncos y copas | hasta −172 m | el corredor por el que se avanza |
+| 4 | Línea de árboles | a 150 m, viajando con la cámara | que el fondo no se corte en seco |
+
+Entre todas va la niebla exponencial, que es la que las separa.
+
+### Cómo se consigue que una hoja roce la cara
+
+Se cuelga **de la cámara**, no del bosque. Un follaje puesto en el mundo a medio
+metro del objetivo se queda atrás en cuanto la cámara avanza; uno colgado de la
+cámara viaja siempre con ella. Cada hoja entra por un lateral, cruza un trozo y
+se va; el 78 % sólo roza el borde y vuelve a salir por donde entró, y el resto
+cruza, pero siempre por arriba o por abajo, nunca por el centro, que es donde
+vive el texto.
+
+Tres detalles hacen que se lea como una hoja y no como una calcomanía:
+
+- **Va a contraluz.** Lo que pasa DELANTE del objetivo tiene la luz detrás, así
+  que se ve oscuro y desaturado. La primera versión iba de verde lima y parecía
+  pegada al cristal.
+- **El desenfoque viene horneado.** De cada forma hay tres copias con distinto
+  difuminado, y cada hoja elige la suya según su profundidad. Cuesta cero por
+  fotograma y no hace falta ningún paso de posprocesado.
+- **Se coloca en proporción al encuadre**, no en metros: se calcula el medio
+  ancho y el medio alto visibles a su profundidad y se sitúa ahí. Por eso en un
+  móvil vertical siguen rozando los bordes en vez de salirse de cuadro.
+
+### Los mandos
+
+Todos los números ajustables están en `bosque/ajustes.js`, en un solo objeto.
+Para probar otros valores sin recompilar, abre la página con `?ajustes`:
+
+```
+http://localhost:4300/umbria-website/?ajustes
+```
+
+Sale un panel con los once deslizadores (cuántas hojas, velocidad, desenfoque,
+presencia, paralaje, distancia y movimiento de cámara, intensidad y color de
+luz, niebla, partículas y brisa). Cuando el ajuste esté bien, **Copiar valores**
+deja el objeto listo para pegar en `ajustes.js`.
+
+El panel **no existe en la visita normal**: se carga con `import()` dinámico y
+sólo si está el parámetro, así que ni siquiera entra en el paquete principal.
 
 ### Las ideas que conviene no romper
 
@@ -188,6 +244,20 @@ va sólo lo que tiene que conservar su nombre exacto.
 - **Nada de mipmaps en las texturas con `alphaTest`.** De lejos, el recorte del
   árbol se promedia, supera el umbral y se pinta el cuadrado entero: paneles
   pálidos flotando al fondo. Es el artefacto clásico.
+- **`alphaToCoverage` en toda la vegetación recortada.** `alphaTest` decide por
+  píxel «dentro o fuera», sin término medio: de lejos no se nota, pero un
+  helecho que pasa a metro y medio del objetivo se ve como una escalera de
+  píxeles. Es, literalmente, el aspecto de videojuego antiguo.
+  `alphaToCoverage` reparte esa decisión entre las muestras del multimuestreo y
+  el canto sale suave sin ordenar transparencias ni pagar un pase extra.
+- **La luz sube; el color de la hoja, no.** Los verdes vivos salen de iluminar
+  el FONDO —el horizonte del cielo y la niebla— y de dejar que los rayos y las
+  sombras hagan el contraste. Subir el color de la vegetación en sí es lo que
+  convierte un hayedo en una moqueta de plástico. Hay un techo en la intensidad
+  de la luz por esto mismo: pasado cierto punto lo único que se consigue es
+  quemar los verdes claros.
+- **Los rayos caen todos hacia el mismo lado que la luz clave.** Un rayo
+  apuntando al revés de la sombra delata la escena al instante.
 
 ### Imágenes
 
@@ -208,8 +278,22 @@ sola fotografía decente.
 ## Rendimiento
 
 - Tres niveles de calidad según núcleos, memoria y densidad de pantalla:
-  cambian la resolución, el antialiasing y cuántos árboles, helechos, motas y
-  jirones hay. En el nivel bajo la escena es la misma, con menos de todo.
+  cambian la resolución, el antialiasing y cuántos árboles, helechos, motas,
+  jirones y hojas cercanas hay. En el nivel bajo la escena es la misma, con
+  menos de todo.
+- **Freno automático.** Adivinar la potencia por los núcleos y la memoria falla
+  a menudo: un teléfono nuevo con la batería baja, un portátil con gráfica
+  integrada. Así que además se MIDE: si el fotograma medio pasa de 34 ms
+  durante dos segundos seguidos, baja un escalón de calidad —menos hojas,
+  menos partículas—, y al segundo escalón baja también la resolución. Sólo
+  baja, nunca sube: un sistema que sube y baja se nota mucho más que ir un
+  escalón por debajo.
+- **En vertical, menos hoja cercana.** El encuadre es estrecho y las mismas
+  hojas se amontonan; se recortan a poco más de la mitad y de paso el teléfono
+  respira.
+- Las sombras proyectadas sólo se encienden en el nivel alto: son un pase extra
+  sobre la geometría. Sin ellas la escena es la misma, sin el moteado del sol
+  en el suelo.
 - El movimiento de las partículas y el **viento de la vegetación** van enteros
   en el vértice: la CPU sólo actualiza un uniforme de tiempo por fotograma, así
   que noventa árboles balanceándose cuestan lo mismo que uno quieto. El viento
@@ -225,6 +309,12 @@ sola fotografía decente.
 - `prefers-reduced-motion`: sin entrada animada, sin revelados, sin paseo de la
   linterna, sin marquesina en marcha y sin desplazamiento amortiguado. **Todo el
   contenido queda visible** y la escena adopta su composición sin recorrido.
+  Las hojas cercanas siguen estando —repartidas por los bordes y quietas—, así
+  que la composición no se queda coja: lo que se quita es el movimiento, no el
+  bosque.
+- **Las hojas no tapan el texto.** Cualquiera que se plante sobre el centro del
+  cuadro se vuelve casi transparente, y el techo de opacidad hace que nunca
+  lleguen a ser opacas. Pasar por delante del título, sí; taparlo, no.
 - Control para pausar el movimiento, con la preferencia recordada. Si el sistema
   ya pide menos movimiento, el control lo explica en vez de ofrecer una acción
   vacía.
@@ -245,13 +335,22 @@ npm run pruebas                      # en otra
 ```
 
 Necesita Playwright (`npx playwright install chromium`; si el navegador ya está
-en otra ruta, se pasa en `CHROMIUM`). Son veinte comprobaciones repartidas en
-cuatro escenarios: escritorio, movimiento reducido, móvil y sin WebGL. Cubren
-que la pantalla de carga se retire, que el contenido se construya, que los
-revelados dejen el texto a la vista, que los lienzos se pinten de verdad, que la
-linterna siga al puntero, que **la rueda no esté secuestrada**, el control de
-movimiento, «Volver a entrar», que no haya desbordamiento horizontal y el
-respaldo sin WebGL.
+en otra ruta, se pasa en `CHROMIUM`). Son veintisiete comprobaciones repartidas
+en cinco escenarios: escritorio, movimiento reducido, móvil, sin WebGL y capas
+de profundidad. Cubren que la pantalla de carga se retire, que el contenido se
+construya, que los revelados dejen el texto a la vista, que los lienzos se
+pinten de verdad, que la linterna siga al puntero, que **la rueda no esté
+secuestrada**, el control de movimiento, «Volver a entrar», que no haya
+desbordamiento horizontal, el respaldo sin WebGL, que las hojas cercanas
+cuelguen de la cámara y viajen de verdad, que **la pose no acumule estado**
+(bajar a un punto y volver a él desde más abajo da la misma cámara) y que el
+panel de ajustes no asome en la visita normal.
+
+Un detalle de las pruebas que merece la pena conservar: donde hay que esperar a
+que la escena se asiente, **se cuentan fotogramas pintados, no milisegundos**.
+Bajo renderizado por software un fotograma puede durar casi un segundo, y
+cualquier plazo fijo o bien se queda corto o bien da por buena una escena que
+ni siquiera ha vuelto a pintar.
 
 ## Licencias
 
@@ -264,6 +363,22 @@ respaldo sin WebGL.
   pieza.
 
 ### Referencia
+
+De los componentes de arranque de **claude-design**
+(`Anthropic/claude-design/starter-components`, licencia **CC0 1.0 Universal**,
+dominio público) se tomaron cuatro IDEAS, no código:
+
+- `three-d-stage.js` — que la escena se piense por **capas de profundidad**, y
+  que lo que las separa sea la luz y la niebla, no la distancia sola.
+- `animations-v3.jsx` — que el scroll y el puntero no muevan las cosas
+  directamente, sino que **empujen un valor que después se amortigua**. De ahí
+  que acelerar no se note como un tirón.
+- `image-slot.js` — que nada se coloque en unidades fijas, sino **en proporción
+  al encuadre**. Es lo que hace que en un móvil vertical las hojas sigan
+  rozando los bordes.
+- `tweaks-panel.jsx` — un **panel para afinar en caliente** en vez de editar un
+  número, recompilar y volver a mirar. El de aquí está reescrito en JavaScript
+  a secas: aquél es React y esta pieza no lo lleva.
 
 Se estudió, como referencia creativa y técnica, el proyecto público
 [Taniiie/FloralFuture_Website](https://github.com/Taniiie/FloralFuture_Website):
